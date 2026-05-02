@@ -1,0 +1,38 @@
+# Secrets + bootstrap output
+.env
+.env.local
+
+# HA runtime files (only configuration.yaml is checked in)
+ha-config/.storage/
+ha-config/.cloud/
+ha-config/.ha_run.lock
+ha-config/home-assistant.log*
+ha-config/home-assistant_v2.db*
+ha-config/secrets.yaml
+ha-config/automations.yaml
+ha-config/scripts.yaml
+# scenes.yaml is curated demo content, NOT runtime — checked in.
+ha-config/.HA_VERSION
+ha-config/blueprints/
+ha-config/tts/
+ha-config/deps/
+ha-config/custom_components/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+
+# Mosquitto runtime
+mosquitto/data/
+mosquitto/log/
+
+# CLI runtime state (PID files + log files for sim and MCP)
+.sandcastle/
+
+# Pre-commit / pre-decision brainstorm notes — checked in only after a
+# human review pass. The directory exists; content lives outside git.
+notes/

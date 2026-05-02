@@ -1,0 +1,1176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Smart Home Demo — Floor Plan</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* === Floor plan: blueprint-on-dark architectural style === */
+    .fp-floor {
+      fill: #0a1220;            /* deep navy floor */
+    }
+    .fp-room-tint {
+      /* Each room gets a slight color tint to help identification.
+         Colors are very subtle so the blueprint feel stays. */
+      opacity: 0.5;
+      pointer-events: none;
+    }
+    .fp-tint-bedroom     { fill: #1e1b4b; }   /* indigo-950, soft purple */
+    .fp-tint-bedroom-2   { fill: #1e293b; }   /* slate-800 */
+    .fp-tint-bathroom    { fill: #0c4a6e; }   /* sky-900, blue */
+    .fp-tint-hallway     { fill: #111827; }   /* gray-900 */
+    .fp-tint-kitchen     { fill: #1c2410; }   /* warm dark green */
+    .fp-tint-living-room { fill: #292524; }   /* stone-800, warm dark */
+
+    .fp-wall-outer {
+      stroke: #cbd5e1; stroke-width: 6;
+      fill: none; stroke-linejoin: miter;
+    }
+    .fp-wall-inner {
+      stroke: #94a3b8; stroke-width: 3;
+      fill: none; stroke-linecap: butt;
+    }
+    .fp-door {
+      stroke: #94a3b8; stroke-width: 1.8;
+      fill: none; stroke-linecap: round;
+    }
+    .fp-door-arc {
+      stroke: #475569; stroke-width: 1.2;
+      fill: none; stroke-dasharray: 2 2;
+    }
+    .fp-furniture {
+      stroke: #64748b; stroke-width: 1.2;
+      fill: #1f2937;
+      pointer-events: none;
+    }
+    .fp-furniture-soft {
+      stroke: #475569; stroke-width: 0.8;
+      fill: #1f2937;
+      pointer-events: none;
+    }
+    .fp-furn-line {
+      stroke: #475569; stroke-width: 0.8;
+      fill: none;
+      pointer-events: none;
+    }
+    .fp-furn-label {
+      fill: #475569; font-size: 8.5px;
+      font-weight: 600; letter-spacing: 0.08em;
+      text-transform: uppercase;
+      pointer-events: none; user-select: none;
+    }
+    .room-label {
+      fill: #cbd5e1;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    /* === Devices === */
+    .device {
+      cursor: default;
+      transition: filter 200ms ease, transform 120ms ease;
+    }
+    .device.clickable { cursor: pointer; }
+    .device.clickable:hover { filter: brightness(1.4); }
+    .device.clickable:active > .device-bg { stroke: #6366f1; stroke-width: 2; }
+    .device-bg {
+      fill: rgba(15, 23, 42, 0.92);  /* slate-900 alpha so floor color bleeds */
+      stroke: #334155;               /* slate-700 */
+      stroke-width: 1.5;
+    }
+    .device-icon { stroke-linejoin: round; stroke-linecap: round; }
+    .device-label {
+      fill: #cbd5e1;
+      font-size: 9.5px;
+      pointer-events: none;
+      user-select: none;
+    }
+    .device-value {
+      fill: #f1f5f9;
+      font-size: 10px;
+      font-weight: 600;
+      pointer-events: none;
+      user-select: none;
+    }
+    .protocol-badge {
+      fill: #6366f1;
+      font-size: 7.5px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    /* Pulsing state for triggered binary sensors */
+    @keyframes pulse-alarm {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    .alarm-on { animation: pulse-alarm 800ms ease-in-out infinite; }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-100 font-sans antialiased">
+  <header class="border-b border-slate-700 px-6 py-3 flex items-center gap-4">
+    <h1 class="text-lg font-semibold">Smart Home Demo</h1>
+    <div id="status" class="ml-auto flex items-center gap-2 text-sm">
+      <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+      <span id="status-text" class="text-slate-400">connecting…</span>
+    </div>
+  </header>
+
+  <main class="grid lg:grid-cols-[minmax(0,1fr)_320px] gap-4 p-4">
+    <section class="bg-slate-950 border border-slate-700 rounded-xl p-3">
+      <svg id="floorplan" viewBox="0 0 1100 720" class="w-full h-auto" preserveAspectRatio="xMidYMid meet">
+        <!-- Room boundaries — drawn by JS so we can reference rooms by key. -->
+      </svg>
+      <div id="whole-home" class="mt-3 grid grid-cols-3 gap-2 text-xs"></div>
+    </section>
+
+    <aside class="bg-slate-950 border border-slate-700 rounded-xl p-3 flex flex-col">
+      <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-2">
+        Recent events
+      </h2>
+      <ul id="events" class="flex-1 overflow-y-auto space-y-1.5 text-sm"></ul>
+      <p class="mt-3 text-[11px] text-slate-500 leading-snug">
+        Click any device to interact: lights/switches/covers toggle,
+        thermostat cycles modes, vacuum starts or returns to base, locks
+        toggle. Sensors fire a demo pulse so the agent can react.
+      </p>
+    </aside>
+  </main>
+
+<script>
+"use strict";
+
+// ============================================================
+// Floor plan layout
+// ============================================================
+// Coordinates picked to give a recognisable 2-bed 1-bath flat:
+// bedrooms + bath along the top, kitchen + living + hallway below.
+const ROOMS = {
+  bedroom:     { x:   0, y:   0, w: 380, h: 260, name: "Bedroom" },
+  bathroom:    { x: 380, y:   0, w: 200, h: 260, name: "Bathroom" },
+  bedroom_2:   { x: 580, y:   0, w: 520, h: 260, name: "Bedroom 2" },
+  hallway:     { x:   0, y: 260, w:1100, h:  70, name: "Hallway" },
+  kitchen:     { x:   0, y: 330, w: 350, h: 270, name: "Kitchen" },
+  living_room: { x: 350, y: 330, w: 750, h: 270, name: "Living Room" },
+};
+
+// ============================================================
+// Device registry
+// ============================================================
+// Each entry: entity_id -> { area, type, x, y } where x/y are
+// offsets within the area's rect. Whole-home devices have area=null
+// and render in the bottom info bar.
+//
+// `type` controls which renderer is used + click semantics:
+//   light, switch, lock, cover, climate, temp, power, motion,
+//   contact, leak, smoke, vacuum
+const DEVICES = {
+  // Bedroom (4 devices) — main overhead + mood RGB + temp + blind.
+  // Lights stacked top, sensors/cover below to keep the bed area
+  // clear visually.
+  "light.bedroom_main":        { area: "bedroom",     type: "light",               x: 130, y: 75 },
+  "light.bedroom_mood":        { area: "bedroom",     type: "light",   rgb: true,  x: 260, y: 75 },
+  "sensor.bedroom_temperature":{ area: "bedroom",     type: "temp",                x: 70,  y: 220 },
+  "cover.bedroom_blind":       { area: "bedroom",     type: "cover",               x: 340, y: 30 },
+
+  // Bathroom — no devices in v0.1.
+
+  // Bedroom 2 (2 devices)
+  "light.bedroom_2_main":         { area: "bedroom_2", type: "light",  x: 130, y: 90 },
+  "sensor.bedroom_2_temperature": { area: "bedroom_2", type: "temp",   x: 350, y: 90 },
+
+  // Hallway (5 devices, laid out left-to-right)
+  "light.hallway_ceiling":      { area: "hallway", type: "light",  x: 100, y: 25 },
+  "lock.front_door":            { area: "hallway", type: "lock",   x: 250, y: 25 },
+  "binary_sensor.front_door_contact": { area: "hallway", type: "contact", x: 400, y: 25 },
+  "binary_sensor.hallway_motion":     { area: "hallway", type: "motion",  x: 600, y: 25 },
+  "binary_sensor.hallway_smoke":      { area: "hallway", type: "smoke",   x: 800, y: 25 },
+
+  // Kitchen (4 devices)
+  "light.kitchen_counter":              { area: "kitchen", type: "light",   x: 100, y: 80 },
+  "switch.coffee_machine":              { area: "kitchen", type: "switch",  x: 230, y: 80 },
+  "binary_sensor.kitchen_window_contact":{ area: "kitchen", type: "contact", x: 100, y: 190 },
+  "binary_sensor.kitchen_leak":         { area: "kitchen", type: "leak",    x: 230, y: 190 },
+
+  // Living Room (4 devices)
+  "light.living_room_main":     { area: "living_room", type: "light",  x: 100, y: 80 },
+  "light.living_room_accent":   { area: "living_room", type: "light",  rgb: true, x: 250, y: 80 },
+  "binary_sensor.living_room_motion": { area: "living_room", type: "motion", x: 450, y: 80 },
+  "cover.living_room_blind":    { area: "living_room", type: "cover",  x: 620, y: 80 },
+
+  // Whole-home (3 devices) — rendered in the info bar.
+  "climate.home_thermostat":    { area: null, type: "climate" },
+  "sensor.power_meter":         { area: null, type: "power" },
+  "vacuum.robot_vacuum":        { area: null, type: "vacuum" },
+};
+
+// Friendly names that look better than the auto-derived ones in the
+// event panel. Filled lazily from /api/states (uses HA's
+// friendly_name attribute) so we don't have to keep this in sync.
+const FRIENDLY = {};
+
+// ============================================================
+// State of the world (kept in memory; updated from HA events)
+// ============================================================
+const ENTITY_STATE = {};
+
+// ============================================================
+// HA WebSocket client
+// ============================================================
+class HAClient {
+  constructor(url, token) {
+    this.url = url.replace(/^http/, "ws") + "/api/websocket";
+    this.token = token;
+    this.ws = null;
+    this._nextId = 1;
+    this._pending = new Map();
+    this._eventHandlers = [];
+  }
+
+  async connect() {
+    return new Promise((resolve, reject) => {
+      this.ws = new WebSocket(this.url);
+      let authed = false;
+      this.ws.onopen = () => { /* server speaks first */ };
+      this.ws.onerror = (e) => reject(new Error("WebSocket error: " + e.message));
+      this.ws.onclose = () => {
+        setStatus("offline", "WebSocket closed");
+        for (const [, fn] of this._pending) fn.reject(new Error("ws closed"));
+        this._pending.clear();
+      };
+      this.ws.onmessage = (raw) => {
+        let msg;
+        try { msg = JSON.parse(raw.data); } catch { return; }
+        if (msg.type === "auth_required") {
+          this.ws.send(JSON.stringify({ type: "auth", access_token: this.token }));
+        } else if (msg.type === "auth_ok") {
+          authed = true;
+          resolve();
+        } else if (msg.type === "auth_invalid") {
+          reject(new Error("HA auth failed: " + msg.message));
+        } else if (msg.type === "result" && msg.id != null) {
+          const cb = this._pending.get(msg.id);
+          if (cb) {
+            this._pending.delete(msg.id);
+            if (msg.success === false) cb.reject(new Error(JSON.stringify(msg.error || msg)));
+            else cb.resolve(msg.result);
+          }
+        } else if (msg.type === "event") {
+          for (const fn of this._eventHandlers) {
+            try { fn(msg.event); } catch (e) { console.error("event handler error", e); }
+          }
+        }
+      };
+    });
+  }
+
+  call(payload) {
+    const id = this._nextId++;
+    return new Promise((resolve, reject) => {
+      this._pending.set(id, { resolve, reject });
+      this.ws.send(JSON.stringify({ ...payload, id }));
+    });
+  }
+
+  onEvent(fn) { this._eventHandlers.push(fn); }
+}
+
+// ============================================================
+// Bootstrap
+// ============================================================
+async function main() {
+  // Pull HA URL + token from the simulator's control server.
+  let cfg;
+  try {
+    const r = await fetch("/api/config");
+    cfg = await r.json();
+    if (cfg.error) throw new Error(cfg.error);
+  } catch (e) {
+    setStatus("error", "config fetch failed: " + e.message);
+    return;
+  }
+
+  drawRooms();
+
+  const ha = new HAClient(cfg.ha_url, cfg.ha_token);
+  try {
+    await ha.connect();
+  } catch (e) {
+    setStatus("error", "HA connect failed: " + e.message);
+    return;
+  }
+  setStatus("ok", "live");
+  window._ha = ha; // for poking from devtools
+
+  // Initial snapshot.
+  const states = await ha.call({ type: "get_states" });
+  for (const s of states) {
+    ENTITY_STATE[s.entity_id] = s;
+    if (s.attributes && s.attributes.friendly_name) {
+      FRIENDLY[s.entity_id] = s.attributes.friendly_name;
+    }
+  }
+
+  // Render every device we know about (skip ones HA doesn't have).
+  for (const [eid, meta] of Object.entries(DEVICES)) {
+    const st = ENTITY_STATE[eid];
+    if (!st) {
+      console.warn("device in DEVICES but not in HA states:", eid);
+      continue;
+    }
+    if (meta.area === null) renderWholeHome(eid, meta, st);
+    else renderRoomDevice(eid, meta, st);
+  }
+
+  // Subscribe to state changes.
+  await ha.call({ type: "subscribe_events", event_type: "state_changed" });
+  ha.onEvent((evt) => {
+    if (!evt.data) return;
+    const eid = evt.data.entity_id;
+    const newState = evt.data.new_state;
+    const oldState = evt.data.old_state;
+    if (!eid || !newState) return;
+    ENTITY_STATE[eid] = newState;
+
+    if (DEVICES[eid]) updateDevice(eid, newState);
+    maybeLogEvent(eid, oldState, newState);
+  });
+}
+
+// ============================================================
+// Status indicator
+// ============================================================
+function setStatus(kind, text) {
+  const dot = document.getElementById("status-dot");
+  const lbl = document.getElementById("status-text");
+  const colors = { ok: "bg-emerald-500", error: "bg-rose-500", offline: "bg-rose-500", connecting: "bg-amber-500" };
+  dot.className = "w-2.5 h-2.5 rounded-full " + (colors[kind] || colors.connecting);
+  lbl.textContent = text;
+}
+
+// ============================================================
+// Floor plan: architectural / blueprint-style render
+// ============================================================
+const SVG = "http://www.w3.org/2000/svg";
+
+function el(tag, attrs = {}, parent = null) {
+  const e = document.createElementNS(SVG, tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v !== null && v !== undefined) e.setAttribute(k, v);
+  }
+  if (parent) parent.appendChild(e);
+  return e;
+}
+
+// Furniture catalogue. Coordinates are absolute SVG coords. Each item
+// is a primitive (rect/path/circle/line) plus a CSS class. Labels are
+// optional. We keep furniture small enough that device cards still
+// dominate visually — the floor plan is the stage, not the focus.
+const FURNITURE = {
+  bedroom: () => [
+    // Queen bed against the bottom of the room
+    { tag: "rect", attrs: { x: 80, y: 165, width: 220, height: 80, rx: 4 }, cls: "fp-furniture" },
+    // Pillow strip
+    { tag: "rect", attrs: { x: 88, y: 172, width: 204, height: 24, rx: 3 }, cls: "fp-furniture-soft" },
+    { tag: "line", attrs: { x1: 190, y1: 172, x2: 190, y2: 196 }, cls: "fp-furn-line" },
+    // Nightstands flanking the bed
+    { tag: "rect", attrs: { x: 35, y: 195, width: 35, height: 35, rx: 2 }, cls: "fp-furniture-soft" },
+    { tag: "rect", attrs: { x: 310, y: 195, width: 35, height: 35, rx: 2 }, cls: "fp-furniture-soft" },
+    // Dresser on far wall (top)
+    { tag: "rect", attrs: { x: 40, y: 30, width: 120, height: 28, rx: 2 }, cls: "fp-furniture-soft" },
+    { tag: "line", attrs: { x1: 80, y1: 30, x2: 80, y2: 58 }, cls: "fp-furn-line" },
+    { tag: "line", attrs: { x1: 120, y1: 30, x2: 120, y2: 58 }, cls: "fp-furn-line" },
+  ],
+
+  bathroom: () => [
+    // Toilet (top-right): tank + bowl
+    { tag: "rect", attrs: { x: 525, y: 28, width: 30, height: 12, rx: 2 }, cls: "fp-furniture-soft" },
+    { tag: "ellipse", attrs: { cx: 540, cy: 56, rx: 16, ry: 18 }, cls: "fp-furniture-soft" },
+    // Vanity / sink (top-left)
+    { tag: "rect", attrs: { x: 408, y: 28, width: 70, height: 32, rx: 2 }, cls: "fp-furniture-soft" },
+    { tag: "ellipse", attrs: { cx: 443, cy: 44, rx: 22, ry: 11 }, cls: "fp-furn-line" },
+    { tag: "circle", attrs: { cx: 443, cy: 44, r: 2.5 }, cls: "fp-furn-line" },
+    // Bathtub (bottom)
+    { tag: "rect", attrs: { x: 408, y: 175, width: 165, height: 70, rx: 12 }, cls: "fp-furniture" },
+    { tag: "rect", attrs: { x: 416, y: 183, width: 149, height: 54, rx: 10 }, cls: "fp-furniture-soft" },
+    { tag: "circle", attrs: { cx: 565, cy: 210, r: 2 }, cls: "fp-furn-line" },
+  ],
+
+  bedroom_2: () => [
+    // Single bed
+    { tag: "rect", attrs: { x: 615, y: 165, width: 150, height: 80, rx: 4 }, cls: "fp-furniture" },
+    { tag: "rect", attrs: { x: 622, y: 172, width: 136, height: 22, rx: 3 }, cls: "fp-furniture-soft" },
+    // Nightstand
+    { tag: "rect", attrs: { x: 775, y: 195, width: 30, height: 30, rx: 2 }, cls: "fp-furniture-soft" },
+    // Desk + chair on the far wall
+    { tag: "rect", attrs: { x: 870, y: 30, width: 130, height: 38, rx: 2 }, cls: "fp-furniture-soft" },
+    { tag: "circle", attrs: { cx: 935, cy: 90, r: 12 }, cls: "fp-furn-line" },
+    // Wardrobe
+    { tag: "rect", attrs: { x: 1020, y: 25, width: 60, height: 90, rx: 2 }, cls: "fp-furniture-soft" },
+    { tag: "line", attrs: { x1: 1050, y1: 25, x2: 1050, y2: 115 }, cls: "fp-furn-line" },
+  ],
+
+  hallway: () => [
+    // Just a small entry mat near the front door
+    { tag: "rect", attrs: { x: 1040, y: 290, width: 50, height: 25, rx: 2 }, cls: "fp-furniture-soft" },
+  ],
+
+  kitchen: () => [
+    // L-shape counter along left + bottom walls
+    { tag: "rect", attrs: { x: 0, y: 332, width: 32, height: 268 }, cls: "fp-furniture" },
+    { tag: "rect", attrs: { x: 0, y: 568, width: 350, height: 32 }, cls: "fp-furniture" },
+    // Fridge in top-left corner of bottom counter (the L's outer corner)
+    { tag: "rect", attrs: { x: 0, y: 332, width: 60, height: 60, rx: 2 }, cls: "fp-furniture-soft" },
+    { tag: "line", attrs: { x1: 0, y1: 362, x2: 60, y2: 362 }, cls: "fp-furn-line" },
+    // Sink on left counter
+    { tag: "rect", attrs: { x: 4, y: 440, width: 24, height: 50, rx: 2 }, cls: "fp-furniture-soft" },
+    { tag: "circle", attrs: { cx: 16, cy: 465, r: 3 }, cls: "fp-furn-line" },
+    // Stove on bottom counter (4 burners)
+    { tag: "rect", attrs: { x: 130, y: 572, width: 80, height: 26, rx: 2 }, cls: "fp-furniture-soft" },
+    { tag: "circle", attrs: { cx: 148, cy: 580, r: 5 }, cls: "fp-furn-line" },
+    { tag: "circle", attrs: { cx: 192, cy: 580, r: 5 }, cls: "fp-furn-line" },
+    { tag: "circle", attrs: { cx: 148, cy: 592, r: 5 }, cls: "fp-furn-line" },
+    { tag: "circle", attrs: { cx: 192, cy: 592, r: 5 }, cls: "fp-furn-line" },
+    // Kitchen island (centre)
+    { tag: "rect", attrs: { x: 95, y: 470, width: 180, height: 50, rx: 4 }, cls: "fp-furniture-soft" },
+    { tag: "text", attrs: { x: 185, y: 500, "text-anchor": "middle" }, cls: "fp-furn-label", text: "ISLAND" },
+  ],
+
+  living_room: () => [
+    // L-shape sofa along the bottom + right wall
+    { tag: "rect", attrs: { x: 380, y: 535, width: 240, height: 55, rx: 6 }, cls: "fp-furniture" },
+    { tag: "rect", attrs: { x: 380, y: 535, width: 240, height: 14, rx: 3 }, cls: "fp-furniture-soft" },
+    { tag: "line", attrs: { x1: 460, y1: 535, x2: 460, y2: 590 }, cls: "fp-furn-line" },
+    { tag: "line", attrs: { x1: 540, y1: 535, x2: 540, y2: 590 }, cls: "fp-furn-line" },
+    // Right arm of L
+    { tag: "rect", attrs: { x: 565, y: 470, width: 55, height: 65, rx: 4 }, cls: "fp-furniture" },
+    { tag: "rect", attrs: { x: 565, y: 470, width: 14, height: 65, rx: 3 }, cls: "fp-furniture-soft" },
+    // Coffee table
+    { tag: "rect", attrs: { x: 430, y: 460, width: 130, height: 50, rx: 4 }, cls: "fp-furniture-soft" },
+    { tag: "text", attrs: { x: 495, y: 491, "text-anchor": "middle" }, cls: "fp-furn-label", text: "TABLE" },
+    // TV unit on right wall
+    { tag: "rect", attrs: { x: 1060, y: 410, width: 35, height: 100, rx: 2 }, cls: "fp-furniture" },
+    { tag: "text", attrs: { x: 1077, y: 463, "text-anchor": "middle", transform: "rotate(-90 1077 463)" }, cls: "fp-furn-label", text: "TV" },
+    // Rug under coffee table
+    { tag: "rect", attrs: { x: 380, y: 440, width: 240, height: 110, rx: 8 }, cls: "fp-furn-line" },
+    // Dining table (top-left corner of living room)
+    { tag: "rect", attrs: { x: 700, y: 360, width: 140, height: 60, rx: 4 }, cls: "fp-furniture-soft" },
+    { tag: "text", attrs: { x: 770, y: 396, "text-anchor": "middle" }, cls: "fp-furn-label", text: "DINING" },
+  ],
+};
+
+function drawRooms() {
+  const svg = document.getElementById("floorplan");
+
+  // Defs + glow layer for per-light radial gradients. Created here
+  // so they're earlier in the SVG document (defs) and so the glow
+  // layer sits below device cards but above walls/furniture (SVG
+  // renders in document order; later draws on top).
+  el("defs", { id: "fp-defs" }, svg);
+
+  // Floor (deep navy backdrop)
+  el("rect", {
+    class: "fp-floor",
+    x: 0, y: 0, width: 1100, height: 600,
+    rx: 6,
+  }, svg);
+
+  // Per-room subtle color tint to differentiate at a glance
+  const tintClass = {
+    bedroom: "fp-tint-bedroom",
+    bathroom: "fp-tint-bathroom",
+    bedroom_2: "fp-tint-bedroom-2",
+    hallway: "fp-tint-hallway",
+    kitchen: "fp-tint-kitchen",
+    living_room: "fp-tint-living-room",
+  };
+  for (const [key, r] of Object.entries(ROOMS)) {
+    el("rect", {
+      class: `fp-room-tint ${tintClass[key] || ""}`,
+      x: r.x, y: r.y, width: r.w, height: r.h,
+    }, svg);
+  }
+
+  // Furniture (drawn before walls so walls clip cleanly on top)
+  for (const [key, makeItems] of Object.entries(FURNITURE)) {
+    for (const item of makeItems()) {
+      const node = el(item.tag, { class: item.cls, ...item.attrs }, svg);
+      if (item.text) node.textContent = item.text;
+    }
+  }
+
+  // Inner walls — drawn as line segments so we can leave gaps for
+  // doorways. Each segment is a single straight wall portion.
+  // Top row of rooms is bedroom | bathroom | bedroom_2 split at
+  // x=380 and x=580, y from 0 to 260. Hallway runs y=260..330. Bottom
+  // row is kitchen | living_room split at x=350.
+  const innerWalls = [
+    // Bedroom <-> Bathroom (vertical at x=380, with a door gap)
+    { x1: 380, y1:   0, x2: 380, y2: 100 },
+    { x1: 380, y1: 150, x2: 380, y2: 260 },
+    // Bathroom <-> Bedroom 2 (vertical at x=580, with a door gap)
+    { x1: 580, y1:   0, x2: 580, y2:  90 },
+    { x1: 580, y1: 140, x2: 580, y2: 260 },
+    // Top-row <-> Hallway (horizontal at y=260, with door gaps for
+    // each bedroom + bathroom).
+    // Bedroom door: gap 90..150
+    { x1:   0, y1: 260, x2:  90, y2: 260 },
+    { x1: 150, y1: 260, x2: 380, y2: 260 },
+    // Bathroom door: gap 460..510
+    { x1: 380, y1: 260, x2: 460, y2: 260 },
+    { x1: 510, y1: 260, x2: 580, y2: 260 },
+    // Bedroom 2 door: gap 700..760
+    { x1: 580, y1: 260, x2: 700, y2: 260 },
+    { x1: 760, y1: 260, x2:1100, y2: 260 },
+    // Hallway <-> bottom rooms (horizontal at y=330)
+    // Kitchen entry: gap 220..290
+    { x1:   0, y1: 330, x2: 220, y2: 330 },
+    { x1: 290, y1: 330, x2: 350, y2: 330 },
+    // Living room: open arch, gap 380..1100 (no wall — fully open)
+    { x1: 350, y1: 330, x2: 380, y2: 330 },
+  ];
+  for (const w of innerWalls) {
+    el("line", { class: "fp-wall-inner", ...w }, svg);
+  }
+
+  // Door swing arcs (visual cue for which way doors open).
+  // Each arc is centered on the door hinge with a 60° sweep.
+  const doorArcs = [
+    { cx:  90, cy: 260, r: 60, from:  -90, to:   0 },  // bedroom door
+    { cx: 460, cy: 260, r: 50, from:  -90, to:   0 },  // bathroom door
+    { cx: 700, cy: 260, r: 60, from:  -90, to:   0 },  // bedroom 2 door
+    { cx: 220, cy: 330, r: 70, from:    0, to:  90 },  // kitchen door
+  ];
+  for (const a of doorArcs) {
+    el("path", { class: "fp-door-arc", d: arcPath(a.cx, a.cy, a.r, a.from, a.to) }, svg);
+    // The door leaf itself (line at the "from" angle)
+    const ang = (a.from * Math.PI) / 180;
+    el("line", {
+      class: "fp-door",
+      x1: a.cx, y1: a.cy,
+      x2: a.cx + Math.cos(ang) * a.r,
+      y2: a.cy + Math.sin(ang) * a.r,
+    }, svg);
+  }
+
+  // Outer wall (drawn last so it crowns everything)
+  el("rect", {
+    class: "fp-wall-outer",
+    x: 3, y: 3, width: 1094, height: 594, rx: 4,
+  }, svg);
+
+  // Front door — break the outer wall on the right side of bedroom 2
+  // (a small opening), drawn as a clear gap.
+  el("rect", {
+    x: 1092, y: 130, width: 12, height: 50,
+    fill: "#0a1220",  // matches floor
+  }, svg);
+  el("line", { class: "fp-door", x1: 1097, y1: 130, x2: 1097, y2: 180 }, svg);
+  el("path", {
+    class: "fp-door-arc",
+    d: arcPath(1097, 130, 50, 90, 180),
+  }, svg);
+  el("text", {
+    x: 1080, y: 124,
+    fill: "#64748b", "font-size": 9, "text-anchor": "end",
+    "letter-spacing": "0.1em", "font-weight": 700,
+  }, svg).textContent = "ENTRY";
+
+  // Room labels (sit above walls but below glows + device cards
+  // intentionally — when a room is fully lit, the warm halo tints
+  // the label colour, which sells the demo).
+  for (const [key, r] of Object.entries(ROOMS)) {
+    const lbl = el("text", {
+      class: "room-label",
+      x: r.x + r.w / 2, y: r.y + 22, "text-anchor": "middle",
+    }, svg);
+    lbl.textContent = r.name;
+  }
+
+  // Glow layer — populated by renderRoomDevice when a light is
+  // created. Drawn here so it's beneath device cards but above the
+  // floor / walls / furniture / room labels.
+  el("g", { id: "light-glow-layer" }, svg);
+}
+
+// SVG arc helper — 'from' / 'to' in degrees, 0 = east, 90 = south.
+function arcPath(cx, cy, r, fromDeg, toDeg) {
+  const fr = (fromDeg * Math.PI) / 180;
+  const tr = (toDeg * Math.PI) / 180;
+  const x1 = cx + Math.cos(fr) * r;
+  const y1 = cy + Math.sin(fr) * r;
+  const x2 = cx + Math.cos(tr) * r;
+  const y2 = cy + Math.sin(tr) * r;
+  const large = Math.abs(toDeg - fromDeg) > 180 ? 1 : 0;
+  const sweep = toDeg > fromDeg ? 1 : 0;
+  return `M ${x1.toFixed(1)} ${y1.toFixed(1)} A ${r} ${r} 0 ${large} ${sweep} ${x2.toFixed(1)} ${y2.toFixed(1)}`;
+}
+
+// ============================================================
+// Device rendering — one group per device, IDs let us swap visuals
+// ============================================================
+const DEVICE_GROUPS = {};   // entity_id -> { g, body, label, value, ... }
+
+function renderRoomDevice(eid, meta, state) {
+  const room = ROOMS[meta.area];
+  if (!room) return;
+  const cx = room.x + meta.x;
+  const cy = room.y + meta.y;
+  const svg = document.getElementById("floorplan");
+
+  // Lights get a glow halo: per-light radial gradient + circle that
+  // sits in the dedicated glow layer (drawn beneath device cards).
+  // We build them up-front so renderLightBody can mutate stops/radius
+  // on every state change without rebuilding nodes.
+  let glowCircle = null;
+  let glowStops = null;
+  if (meta.type === "light") {
+    const defs = document.getElementById("fp-defs");
+    const grad = el("radialGradient", {
+      id: `glow-${cssEscape(eid)}`,
+      cx: "50%", cy: "50%", r: "50%",
+    }, defs);
+    glowStops = [
+      el("stop", { offset:   "0%", "stop-color": "#000", "stop-opacity": 0 }, grad),
+      el("stop", { offset:  "55%", "stop-color": "#000", "stop-opacity": 0 }, grad),
+      el("stop", { offset: "100%", "stop-color": "#000", "stop-opacity": 0 }, grad),
+    ];
+    glowCircle = el("circle", {
+      cx, cy, r: 90,
+      fill: `url(#glow-${cssEscape(eid)})`,
+      "pointer-events": "none",
+    }, document.getElementById("light-glow-layer"));
+  }
+
+  const g = document.createElementNS(SVG, "g");
+  g.setAttribute("class", "device");
+  g.setAttribute("transform", `translate(${cx}, ${cy})`);
+
+  // Background rectangle (96 wide x 60 tall)
+  const w = 96, h = 60;
+  const bg = document.createElementNS(SVG, "rect");
+  bg.setAttribute("class", "device-bg");
+  bg.setAttribute("x", -w/2); bg.setAttribute("y", -h/2);
+  bg.setAttribute("width", w); bg.setAttribute("height", h);
+  bg.setAttribute("rx", 6);
+  g.appendChild(bg);
+
+  // Friendly name label
+  const friendly = state.attributes.friendly_name || eid;
+  const lbl = document.createElementNS(SVG, "text");
+  lbl.setAttribute("class", "device-label");
+  lbl.setAttribute("text-anchor", "middle");
+  lbl.setAttribute("x", 0); lbl.setAttribute("y", h/2 - 6);
+  lbl.textContent = truncate(friendly, 14);
+  g.appendChild(lbl);
+
+  // Protocol badge
+  const proto = (state.attributes && state.attributes.protocol) || "MQTT";
+  const badge = document.createElementNS(SVG, "text");
+  badge.setAttribute("class", "protocol-badge");
+  badge.setAttribute("text-anchor", "end");
+  badge.setAttribute("x", w/2 - 6);
+  badge.setAttribute("y", -h/2 + 11);
+  badge.textContent = proto.toUpperCase();
+  g.appendChild(badge);
+
+  // Type-specific body
+  const body = document.createElementNS(SVG, "g");
+  body.setAttribute("class", "device-icon");
+  g.appendChild(body);
+
+  // Value text (above label, used for temp / brightness / position)
+  const value = document.createElementNS(SVG, "text");
+  value.setAttribute("class", "device-value");
+  value.setAttribute("text-anchor", "middle");
+  value.setAttribute("x", 0); value.setAttribute("y", h/2 - 18);
+  g.appendChild(value);
+
+  svg.appendChild(g);
+
+  DEVICE_GROUPS[eid] = { g, body, label: lbl, value, meta, glowCircle, glowStops };
+
+  // Every device is clickable — the action depends on type.
+  g.classList.add("clickable");
+  if (meta.type === "lock")              g.addEventListener("click", () => onLockToggle(eid));
+  else if (meta.type === "light")        g.addEventListener("click", () => onLightToggle(eid));
+  else if (meta.type === "switch")       g.addEventListener("click", () => onSwitchToggle(eid));
+  else if (meta.type === "cover")        g.addEventListener("click", () => onCoverToggle(eid));
+  else if (meta.type === "contact")      g.addEventListener("click", () => onContactToggle(eid));
+  else if (meta.type === "motion"
+        || meta.type === "leak"
+        || meta.type === "smoke")        g.addEventListener("click", () => onSensorPulse(eid));
+  else if (meta.type === "temp")         g.classList.remove("clickable"); // read-only sensor
+
+  updateDevice(eid, state);
+}
+
+function updateDevice(eid, state) {
+  const ent = DEVICE_GROUPS[eid];
+  if (!ent) return;
+  // Whole-home devices use a different renderer.
+  if (ent.meta.area === null) {
+    updateWholeHome(eid, state);
+    return;
+  }
+  const t = ent.meta.type;
+  if (t === "light")    renderLightBody(ent, state);
+  else if (t === "switch")  renderSwitchBody(ent, state);
+  else if (t === "lock")    renderLockBody(ent, state);
+  else if (t === "cover")   renderCoverBody(ent, state);
+  else if (t === "temp")    renderTempBody(ent, state);
+  else if (t === "motion")  renderMotionBody(ent, state);
+  else if (t === "contact") renderContactBody(ent, state);
+  else if (t === "leak")    renderLeakBody(ent, state);
+  else if (t === "smoke")   renderSmokeBody(ent, state);
+}
+
+// ----- per-type renderers -----
+
+function clearBody(ent) {
+  while (ent.body.firstChild) ent.body.removeChild(ent.body.firstChild);
+  ent.value.textContent = "";
+  ent.g.classList.remove("alarm-on");
+}
+
+function renderLightBody(ent, state) {
+  clearBody(ent);
+  const on = state.state === "on";
+  const attrs = state.attributes || {};
+  const brightness = attrs.brightness == null ? (on ? 200 : 0) : attrs.brightness;
+
+  // Pick the visual color: explicit rgb_color overrides; dimmable
+  // lights use a warm white-yellow.
+  let lightColor = "#fde68a";   // amber-200, warm white feel
+  if (on && Array.isArray(attrs.rgb_color) && attrs.rgb_color.length === 3) {
+    const [r, g, b] = attrs.rgb_color;
+    lightColor = `rgb(${r}, ${g}, ${b})`;
+  }
+  const offColor = "#475569";   // slate-600
+
+  // Bulb circle
+  const c = document.createElementNS(SVG, "circle");
+  c.setAttribute("cx", 0); c.setAttribute("cy", -6); c.setAttribute("r", 9);
+  c.setAttribute("fill", on ? lightColor : offColor);
+  c.setAttribute("opacity", on ? Math.max(0.45, brightness / 255).toFixed(2) : 0.4);
+  ent.body.appendChild(c);
+  // Stem
+  const stem = document.createElementNS(SVG, "rect");
+  stem.setAttribute("x", -3); stem.setAttribute("y", 4); stem.setAttribute("width", 6); stem.setAttribute("height", 4);
+  stem.setAttribute("fill", "#94a3b8");
+  ent.body.appendChild(stem);
+  if (on) ent.value.textContent = `${Math.round(brightness/255*100)}%`;
+
+  // Drive the room halo. Brightness scales radius (60..170) and
+  // opacity (0.15..0.7) so a 100% light fills the room while a 10%
+  // bedside lamp barely glows.
+  if (ent.glowCircle && ent.glowStops) {
+    const intensity = on ? Math.max(0.15, brightness / 255) : 0;
+    const radius = on ? 60 + intensity * 110 : 0;
+    const peakAlpha = on ? Math.min(0.7, 0.2 + intensity * 0.55) : 0;
+    ent.glowCircle.setAttribute("r", radius.toFixed(0));
+    ent.glowStops[0].setAttribute("stop-color", lightColor);
+    ent.glowStops[0].setAttribute("stop-opacity", peakAlpha.toFixed(3));
+    ent.glowStops[1].setAttribute("stop-color", lightColor);
+    ent.glowStops[1].setAttribute("stop-opacity", (peakAlpha * 0.35).toFixed(3));
+    ent.glowStops[2].setAttribute("stop-color", lightColor);
+    ent.glowStops[2].setAttribute("stop-opacity", 0);
+  }
+}
+
+function renderSwitchBody(ent, state) {
+  clearBody(ent);
+  const on = state.state === "on";
+  const r = document.createElementNS(SVG, "rect");
+  r.setAttribute("x", -10); r.setAttribute("y", -10);
+  r.setAttribute("width", 20); r.setAttribute("height", 16); r.setAttribute("rx", 2);
+  r.setAttribute("fill", on ? "#10b981" : "#475569");
+  r.setAttribute("stroke", "#0f172a"); r.setAttribute("stroke-width", 1);
+  ent.body.appendChild(r);
+  // Two prongs
+  for (const dx of [-4, 4]) {
+    const p = document.createElementNS(SVG, "rect");
+    p.setAttribute("x", dx - 1); p.setAttribute("y", -5);
+    p.setAttribute("width", 2); p.setAttribute("height", 6);
+    p.setAttribute("fill", "#0f172a");
+    ent.body.appendChild(p);
+  }
+  ent.value.textContent = on ? "ON" : "OFF";
+}
+
+function renderLockBody(ent, state) {
+  clearBody(ent);
+  const locked = state.state === "locked";
+  // Body
+  const body = document.createElementNS(SVG, "rect");
+  body.setAttribute("x", -8); body.setAttribute("y", -3);
+  body.setAttribute("width", 16); body.setAttribute("height", 12); body.setAttribute("rx", 2);
+  body.setAttribute("fill", locked ? "#10b981" : "#f43f5e");
+  ent.body.appendChild(body);
+  // Shackle (open arc when unlocked)
+  const sh = document.createElementNS(SVG, "path");
+  if (locked) {
+    sh.setAttribute("d", "M -5 -3 V -7 a 5 5 0 0 1 10 0 V -3");
+  } else {
+    sh.setAttribute("d", "M -5 -3 V -7 a 5 5 0 0 1 10 0 V -5");
+  }
+  sh.setAttribute("fill", "none");
+  sh.setAttribute("stroke", locked ? "#10b981" : "#f43f5e");
+  sh.setAttribute("stroke-width", 2);
+  ent.body.appendChild(sh);
+  ent.value.textContent = locked ? "LOCKED" : "OPEN";
+}
+
+function renderCoverBody(ent, state) {
+  clearBody(ent);
+  const pos = (state.attributes && state.attributes.current_position) ?? 0;
+  // Window outline
+  const frame = document.createElementNS(SVG, "rect");
+  frame.setAttribute("x", -10); frame.setAttribute("y", -10);
+  frame.setAttribute("width", 20); frame.setAttribute("height", 16);
+  frame.setAttribute("fill", "#1e293b"); frame.setAttribute("stroke", "#94a3b8");
+  ent.body.appendChild(frame);
+  // Blind fill from top: position=0 closed (full), 100=open (none)
+  const fill = document.createElementNS(SVG, "rect");
+  const fillH = (16 * (100 - pos)) / 100;
+  fill.setAttribute("x", -10); fill.setAttribute("y", -10);
+  fill.setAttribute("width", 20); fill.setAttribute("height", fillH);
+  fill.setAttribute("fill", "#64748b");
+  ent.body.appendChild(fill);
+  // Slats
+  for (let i = 1; i <= 3; i++) {
+    if (fillH < i * 4) break;
+    const slat = document.createElementNS(SVG, "line");
+    slat.setAttribute("x1", -10); slat.setAttribute("y1", -10 + i * 4);
+    slat.setAttribute("x2", 10);  slat.setAttribute("y2", -10 + i * 4);
+    slat.setAttribute("stroke", "#475569"); slat.setAttribute("stroke-width", 0.6);
+    ent.body.appendChild(slat);
+  }
+  ent.value.textContent = `${pos}%`;
+}
+
+function renderTempBody(ent, state) {
+  clearBody(ent);
+  const v = parseFloat(state.state);
+  // Thermometer
+  const stem = document.createElementNS(SVG, "rect");
+  stem.setAttribute("x", -2); stem.setAttribute("y", -10);
+  stem.setAttribute("width", 4); stem.setAttribute("height", 14);
+  stem.setAttribute("fill", "#94a3b8"); stem.setAttribute("rx", 2);
+  ent.body.appendChild(stem);
+  const bulb = document.createElementNS(SVG, "circle");
+  bulb.setAttribute("cx", 0); bulb.setAttribute("cy", 6); bulb.setAttribute("r", 4);
+  bulb.setAttribute("fill", "#ef4444");
+  ent.body.appendChild(bulb);
+  if (!isNaN(v)) ent.value.textContent = `${v.toFixed(1)}°C`;
+}
+
+function renderMotionBody(ent, state) {
+  clearBody(ent);
+  const on = state.state === "on";
+  const fill = on ? "#fbbf24" : "#475569";
+  // Walking person: head + body
+  const head = document.createElementNS(SVG, "circle");
+  head.setAttribute("cx", 0); head.setAttribute("cy", -8); head.setAttribute("r", 3);
+  head.setAttribute("fill", fill);
+  ent.body.appendChild(head);
+  const torso = document.createElementNS(SVG, "path");
+  torso.setAttribute("d", "M -4 -3 L 0 -3 L 4 -3 L 6 6 L 2 6 L 0 0 L -2 6 L -6 6 Z");
+  torso.setAttribute("fill", fill);
+  ent.body.appendChild(torso);
+  if (on) ent.g.classList.add("alarm-on");
+  ent.value.textContent = on ? "MOTION" : "—";
+}
+
+function renderContactBody(ent, state) {
+  clearBody(ent);
+  const open = state.state === "on";
+  // Door frame
+  const frame = document.createElementNS(SVG, "rect");
+  frame.setAttribute("x", -10); frame.setAttribute("y", -10);
+  frame.setAttribute("width", 20); frame.setAttribute("height", 18);
+  frame.setAttribute("fill", "none"); frame.setAttribute("stroke", "#94a3b8"); frame.setAttribute("stroke-width", 1.5);
+  ent.body.appendChild(frame);
+  // Door (rotated open or closed)
+  const door = document.createElementNS(SVG, "path");
+  if (open) {
+    door.setAttribute("d", "M -10 8 L -10 -10 L 4 -6 L 4 12 Z");
+    door.setAttribute("fill", "#fbbf24");
+  } else {
+    door.setAttribute("d", "M -9 -10 L 9 -10 L 9 8 L -9 8 Z");
+    door.setAttribute("fill", "#475569");
+  }
+  ent.body.appendChild(door);
+  ent.value.textContent = open ? "OPEN" : "CLOSED";
+}
+
+function renderLeakBody(ent, state) {
+  clearBody(ent);
+  const on = state.state === "on";
+  const drop = document.createElementNS(SVG, "path");
+  drop.setAttribute("d", "M 0 -10 C 6 -2 8 4 0 9 C -8 4 -6 -2 0 -10 Z");
+  drop.setAttribute("fill", on ? "#3b82f6" : "#475569");
+  ent.body.appendChild(drop);
+  if (on) ent.g.classList.add("alarm-on");
+  ent.value.textContent = on ? "LEAK!" : "—";
+}
+
+function renderSmokeBody(ent, state) {
+  clearBody(ent);
+  const on = state.state === "on";
+  // Cloud-ish shape
+  const c = document.createElementNS(SVG, "path");
+  c.setAttribute("d", "M -8 4 a 5 5 0 0 1 4 -8 a 5 5 0 0 1 8 -2 a 5 5 0 0 1 4 5 a 4 4 0 0 1 -4 5 H -4 a 4 4 0 0 1 -4 -4 Z");
+  c.setAttribute("fill", on ? "#dc2626" : "#475569");
+  ent.body.appendChild(c);
+  if (on) ent.g.classList.add("alarm-on");
+  ent.value.textContent = on ? "SMOKE!" : "—";
+}
+
+// ============================================================
+// Whole-home info bar
+// ============================================================
+function renderWholeHome(eid, meta, state) {
+  const bar = document.getElementById("whole-home");
+  const card = document.createElement("div");
+  card.id = "wh-" + eid;
+  card.className = "rounded-md border border-slate-700 bg-slate-900 px-3 py-2 flex flex-col gap-0.5";
+  // Climate + vacuum cards are clickable; power meter is read-only.
+  if (meta.type === "climate" || meta.type === "vacuum") {
+    card.className += " cursor-pointer hover:border-indigo-500 transition";
+    if (meta.type === "climate")     card.addEventListener("click", () => onClimateClick(eid));
+    else if (meta.type === "vacuum") card.addEventListener("click", () => onVacuumClick(eid));
+  }
+  bar.appendChild(card);
+  DEVICE_GROUPS[eid] = { card, meta };
+  updateWholeHome(eid, state);
+}
+
+function updateWholeHome(eid, state) {
+  const ent = DEVICE_GROUPS[eid];
+  if (!ent || !ent.card) return;
+  const friendly = state.attributes.friendly_name || eid;
+  const proto = (state.attributes.protocol || "MQTT").toUpperCase();
+  let body = "";
+  if (ent.meta.type === "climate") {
+    const cur = state.attributes.current_temperature ?? "?";
+    const tgt = state.attributes.temperature ?? "?";
+    body = `${cur}°C  →  ${tgt}°C  (${state.state})`;
+  } else if (ent.meta.type === "power") {
+    body = `${state.state} W`;
+  } else if (ent.meta.type === "vacuum") {
+    const room = state.attributes.current_room;
+    body = state.state + (room ? ` · ${room}` : "");
+  } else {
+    body = state.state;
+  }
+  ent.card.innerHTML = `
+    <div class="flex items-center justify-between">
+      <span class="text-slate-300 text-[11px] uppercase tracking-wider">${friendly}</span>
+      <span class="text-indigo-400 text-[9px] font-bold tracking-widest">${proto}</span>
+    </div>
+    <div class="text-slate-100 font-mono text-sm">${body}</div>
+  `;
+}
+
+// ============================================================
+// Event panel
+// ============================================================
+// Significant-events whitelist. We only log binary-sensor classes
+// (motion / door / window / moisture / smoke), lock state changes,
+// and vacuum state changes. Lights / switches / covers / climate
+// changes are visible on the floor plan and would just be noise
+// here — they're deliberately excluded.
+//
+// Each filter must also confirm the event is a real transition
+// (`p && p.state !== s.state`); without that, the periodic
+// `last_updated` republishes HA emits would re-log entries.
+const EVENT_KINDS = {
+  motion: {
+    label: "MOTION", color: "text-amber-400",
+    filter: (s, p) =>
+      (s.attributes || {}).device_class === "motion"
+      && s.state === "on" && p && p.state !== "on",
+  },
+  contact_open: {
+    label: "OPENED", color: "text-amber-400",
+    filter: (s, p) => {
+      const dc = (s.attributes || {}).device_class;
+      return (dc === "door" || dc === "window")
+        && s.state === "on" && p && p.state !== "on";
+    },
+  },
+  contact_close: {
+    label: "CLOSED", color: "text-emerald-400",
+    filter: (s, p) => {
+      const dc = (s.attributes || {}).device_class;
+      return (dc === "door" || dc === "window")
+        && s.state === "off" && p && p.state === "on";
+    },
+  },
+  leak: {
+    label: "LEAK", color: "text-rose-400",
+    filter: (s, p) =>
+      (s.attributes || {}).device_class === "moisture"
+      && s.state === "on" && p && p.state !== "on",
+  },
+  smoke: {
+    label: "SMOKE", color: "text-rose-400",
+    filter: (s, p) =>
+      (s.attributes || {}).device_class === "smoke"
+      && s.state === "on" && p && p.state !== "on",
+  },
+  lock_changed: {
+    label: "LOCK", color: "text-indigo-400",
+    filter: (s, p) =>
+      s.entity_id.startsWith("lock.") && p && p.state !== s.state,
+  },
+  vacuum_state: {
+    label: "VACUUM", color: "text-indigo-400",
+    filter: (s, p) =>
+      s.entity_id.startsWith("vacuum.") && p && p.state !== s.state,
+  },
+};
+
+function maybeLogEvent(eid, oldState, newState) {
+  for (const [, ev] of Object.entries(EVENT_KINDS)) {
+    if (ev.filter(newState, oldState)) {
+      logEvent(ev, eid, newState);
+      return;
+    }
+  }
+}
+
+function logEvent(ev, eid, state) {
+  const ul = document.getElementById("events");
+  const li = document.createElement("li");
+  li.className = "rounded border border-slate-700 bg-slate-900 px-2 py-1.5";
+  const time = new Date().toLocaleTimeString();
+  const friendly = state.attributes.friendly_name || eid;
+  li.innerHTML = `
+    <div class="flex items-baseline justify-between gap-2">
+      <span class="font-bold ${ev.color}">${ev.label}</span>
+      <span class="text-slate-500 text-[10px] tabular-nums">${time}</span>
+    </div>
+    <div class="text-slate-300 text-xs">${friendly} → ${state.state}</div>
+  `;
+  ul.insertBefore(li, ul.firstChild);
+  while (ul.children.length > 10) ul.removeChild(ul.lastChild);
+}
+
+// ============================================================
+// Click handlers — every device type. All controllable actions go
+// through HA's service registry (the same path the agent uses).
+// Sensor-only triggers go through the simulator's /api/demo/trigger
+// (HA has no service to fire a read-only sensor).
+// ============================================================
+
+async function callService(domain, service, entity_id, extra = {}) {
+  try {
+    await window._ha.call({
+      type: "call_service",
+      domain,
+      service,
+      target: { entity_id },
+      service_data: extra,
+    });
+  } catch (e) {
+    console.error(`${domain}.${service} failed:`, e);
+  }
+}
+
+async function onLightToggle(eid) {
+  await callService("light", "toggle", eid);
+}
+
+async function onSwitchToggle(eid) {
+  await callService("switch", "toggle", eid);
+}
+
+async function onLockToggle(eid) {
+  const st = ENTITY_STATE[eid];
+  const service = st && st.state === "locked" ? "unlock" : "lock";
+  await callService("lock", service, eid);
+}
+
+async function onCoverToggle(eid) {
+  // HA's cover.toggle works for blinds — opens if closed, closes if open.
+  await callService("cover", "toggle", eid);
+}
+
+const HVAC_CYCLE = ["off", "heat", "cool", "auto"];
+async function onClimateClick(eid) {
+  // Click cycles through hvac_mode. Holding the brief simple — for
+  // setting target temperature the agent is the right tool.
+  const st = ENTITY_STATE[eid];
+  const cur = (st && st.state) || "off";
+  const idx = HVAC_CYCLE.indexOf(cur);
+  const next = HVAC_CYCLE[(idx + 1) % HVAC_CYCLE.length];
+  await callService("climate", "set_hvac_mode", eid, { hvac_mode: next });
+}
+
+async function onVacuumClick(eid) {
+  const st = ENTITY_STATE[eid];
+  const cur = (st && st.state) || "docked";
+  // Docked or idle -> start cleaning; else send back to base.
+  const service = (cur === "docked" || cur === "idle" || cur === "paused")
+    ? "start" : "return_to_base";
+  await callService("vacuum", service, eid);
+}
+
+// --- Demo-event triggers (sensors don't have HA services) -------------
+
+async function onSensorPulse(eid) {
+  try {
+    await fetch("/api/demo/trigger", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ entity_id: eid, action: "pulse", duration_ms: 3000 }),
+    });
+  } catch (e) {
+    console.error("sensor pulse failed:", e);
+  }
+}
+
+async function onContactToggle(eid) {
+  const st = ENTITY_STATE[eid];
+  const want = st && st.state === "on" ? "OFF" : "ON";
+  try {
+    await fetch("/api/demo/trigger", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ entity_id: eid, action: "set", state: want }),
+    });
+  } catch (e) {
+    console.error("contact toggle failed:", e);
+  }
+}
+
+// ============================================================
+// Helpers
+// ============================================================
+function truncate(s, n) {
+  if (s.length <= n) return s;
+  return s.slice(0, n - 1) + "…";
+}
+
+// Sanitize an entity_id for use in an SVG element id / url(...) ref.
+// Replaces dots and any other non-id-safe char with underscores.
+function cssEscape(s) {
+  return String(s).replace(/[^A-Za-z0-9_-]/g, "_");
+}
+
+// ============================================================
+// Go!
+// ============================================================
+main();
+</script>
+</body>
+</html>

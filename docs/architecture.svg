@@ -1,0 +1,240 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 1200 460"
+     font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+
+  <!-- Light-mode defaults; @media swaps them for dark GitHub theme. -->
+  <style>
+    .bg            { fill: #ffffff; }
+    .panel         { fill: #ffffff; stroke: #d1d5db; }
+    .pill          { fill: #f3f4f6; stroke: #e5e7eb; }
+    .pill-dashed   { fill: #ffffff; stroke: #d1d5db; }
+    .text-primary  { fill: #1f2937; }
+    .text-dim      { fill: #6b7280; }
+    .arrow-stroke  { stroke: #4b5563; }
+    .arrow-fill    { fill: #4b5563; }
+    .dim-stroke    { stroke: #9ca3af; }
+    .dim-fill      { fill: #9ca3af; }
+    .agent-header  { fill: #fef3c7; }
+    .agent-text    { fill: #92400e; }
+    .mcp-header    { fill: #dbeafe; }
+    .mcp-text      { fill: #1e40af; }
+    .home-header   { fill: #d1fae5; }
+    .home-text     { fill: #065f46; }
+    .term-bg       { fill: #1f2937; }
+    .term-bar      { fill: #374151; }
+    .term-text     { fill: #f3f4f6; }
+    .term-prompt   { fill: #a78bfa; }
+    .term-tool     { fill: #34d399; }
+    .term-meta     { fill: #9ca3af; }
+    .url-bar       { fill: #f3f4f6; stroke: #d1d5db; }
+    .url-text      { fill: #4b5563; }
+    .floor-room    { fill: #9ca3af; }
+    .floor-state   { fill: #6b7280; }
+    .floor-on      { fill: #059669; }
+    .glow          { fill: #fde68a; fill-opacity: 0.55; }
+
+    @media (prefers-color-scheme: dark) {
+      .bg            { fill: #0d1117; }
+      .panel         { fill: #161b22; stroke: #30363d; }
+      .pill          { fill: #21262d; stroke: #30363d; }
+      .pill-dashed   { fill: #161b22; stroke: #30363d; }
+      .text-primary  { fill: #e6edf3; }
+      .text-dim      { fill: #8b949e; }
+      .arrow-stroke  { stroke: #8b949e; }
+      .arrow-fill    { fill: #8b949e; }
+      .dim-stroke    { stroke: #6e7681; }
+      .dim-fill      { fill: #6e7681; }
+      .agent-header  { fill: #3b2206; }
+      .agent-text    { fill: #fbbf24; }
+      .mcp-header    { fill: #0d1f3d; }
+      .mcp-text      { fill: #93c5fd; }
+      .home-header   { fill: #052e16; }
+      .home-text     { fill: #6ee7b7; }
+      .term-bg       { fill: #21262d; }
+      .term-bar      { fill: #30363d; }
+      .url-bar       { fill: #21262d; stroke: #30363d; }
+      .url-text      { fill: #8b949e; }
+      .floor-room    { fill: #6e7681; }
+      .floor-state   { fill: #8b949e; }
+      .floor-on      { fill: #34d399; }
+    }
+  </style>
+
+  <defs>
+    <!-- Smaller arrowheads (7×7) so endpoints don't crowd inter-box labels. -->
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="arrow-fill"/>
+    </marker>
+    <marker id="arr-dim" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="dim-fill"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1200" height="460"/>
+
+  <!-- ================================================================ -->
+  <!-- Row 1 — what the user sees                                       -->
+  <!-- ================================================================ -->
+
+  <!-- Terminal -->
+  <g>
+    <rect x="40" y="30" width="500" height="170" rx="8" class="term-bg"/>
+    <rect x="40" y="30" width="500" height="32" rx="8" class="term-bar"/>
+    <rect x="40" y="50" width="500" height="12" class="term-bar"/>
+    <circle cx="60" cy="46" r="6" fill="#ef4444"/>
+    <circle cx="80" cy="46" r="6" fill="#f59e0b"/>
+    <circle cx="100" cy="46" r="6" fill="#10b981"/>
+    <text x="290" y="50" font-size="12" class="term-meta" text-anchor="middle">sandcastle-sim chat</text>
+
+    <text x="60" y="92" font-family="ui-monospace, Menlo, Consolas, monospace"
+          font-size="13" class="term-text">$ sandcastle-sim chat</text>
+    <text x="60" y="120" font-family="ui-monospace, Menlo, Consolas, monospace"
+          font-size="13" class="term-prompt">you &gt;</text>
+    <text x="115" y="120" font-family="ui-monospace, Menlo, Consolas, monospace"
+          font-size="13" class="term-text">turn off the kitchen light</text>
+    <text x="60" y="150" font-family="ui-monospace, Menlo, Consolas, monospace"
+          font-size="13" class="term-tool">  → turn_off(entity_id=light.kitchen_counter)</text>
+    <text x="60" y="180" font-family="ui-monospace, Menlo, Consolas, monospace"
+          font-size="13" class="term-text">Kitchen counter light is now off.</text>
+  </g>
+
+  <!-- Floor plan rendered in browser chrome -->
+  <g>
+    <rect x="660" y="30" width="500" height="170" rx="8" class="panel" stroke-width="1.5"/>
+    <!-- browser chrome -->
+    <rect x="660" y="30" width="500" height="42" rx="8" class="bg"/>
+    <rect x="660" y="60" width="500" height="12" class="bg"/>
+    <line x1="660" y1="72" x2="1160" y2="72" class="dim-stroke" stroke-width="1"/>
+    <circle cx="680" cy="51" r="5" fill="#ef4444"/>
+    <circle cx="698" cy="51" r="5" fill="#f59e0b"/>
+    <circle cx="716" cy="51" r="5" fill="#10b981"/>
+    <rect x="744" y="41" width="396" height="20" rx="10" class="url-bar" stroke-width="1"/>
+    <text x="942" y="55" font-size="12" class="url-text" text-anchor="middle">localhost:8766</text>
+
+    <!-- floor plan body: 3 rooms -->
+    <line x1="827" y1="84" x2="827" y2="194" class="dim-stroke" stroke-width="1.5" stroke-dasharray="3,3"/>
+    <line x1="994" y1="84" x2="994" y2="194" class="dim-stroke" stroke-width="1.5" stroke-dasharray="3,3"/>
+
+    <text x="743" y="94" font-size="12" class="floor-room" text-anchor="middle">living room</text>
+    <text x="910" y="94" font-size="12" class="floor-room" text-anchor="middle">bedroom</text>
+    <text x="1077" y="94" font-size="12" class="floor-room" text-anchor="middle">kitchen</text>
+
+    <!-- living: light on with glow -->
+    <circle cx="743" cy="138" r="22" class="glow"/>
+    <text x="743" y="148" font-size="30" text-anchor="middle">💡</text>
+    <text x="743" y="184" font-size="12" class="floor-on" text-anchor="middle" font-weight="700">on</text>
+
+    <!-- bedroom: locked -->
+    <text x="910" y="148" font-size="30" text-anchor="middle">🔒</text>
+    <text x="910" y="184" font-size="12" class="floor-state" text-anchor="middle">locked</text>
+
+    <!-- kitchen: light off -->
+    <text x="1077" y="148" font-size="30" text-anchor="middle">💡</text>
+    <text x="1077" y="184" font-size="12" class="text-dim" text-anchor="middle">off</text>
+  </g>
+
+  <!-- "sees it change" feedback arrow (back across the gap, dashed) -->
+  <path d="M 660 115 L 552 115" class="dim-stroke" stroke-width="1.5"
+        stroke-dasharray="4,3" fill="none" marker-end="url(#arr-dim)"/>
+  <text x="606" y="107" font-size="11" class="dim-fill" text-anchor="middle">sees it change</text>
+
+  <!-- ================================================================ -->
+  <!-- Inter-row arrows                                                 -->
+  <!-- ================================================================ -->
+
+  <path d="M 190 200 L 190 260" class="arrow-stroke" stroke-width="1.5"
+        fill="none" marker-end="url(#arr)"/>
+  <text x="200" y="234" font-size="12" class="arrow-fill">prompt</text>
+
+  <path d="M 1010 260 L 1010 200" class="arrow-stroke" stroke-width="1.5"
+        fill="none" marker-end="url(#arr)"/>
+  <text x="1020" y="234" font-size="12" class="arrow-fill">live update</text>
+
+  <!-- ================================================================ -->
+  <!-- Row 2 — the stack                                                -->
+  <!-- ================================================================ -->
+
+  <!-- Agent -->
+  <g>
+    <rect x="40" y="260" width="300" height="170" rx="8" class="panel" stroke-width="1.5"/>
+    <rect x="40" y="260" width="300" height="34" rx="8" class="agent-header"/>
+    <rect x="40" y="284" width="300" height="10" class="agent-header"/>
+    <text x="58" y="282" font-size="14" font-weight="700" class="agent-text">Your agent</text>
+
+    <text x="58" y="316" font-size="12" class="agent-text" font-weight="700" letter-spacing="0.5">INFERENCE</text>
+
+    <rect x="58" y="324" width="264" height="28" rx="4" class="pill"/>
+    <text x="190" y="343" font-size="13" class="text-primary" text-anchor="middle">Ollama (default)</text>
+
+    <rect x="58" y="358" width="127" height="28" rx="4" class="pill"/>
+    <text x="121" y="377" font-size="13" class="text-primary" text-anchor="middle">Anthropic SDK</text>
+    <rect x="195" y="358" width="127" height="28" rx="4" class="pill"/>
+    <text x="258" y="377" font-size="13" class="text-primary" text-anchor="middle">OpenAI SDK</text>
+
+    <rect x="58" y="392" width="264" height="28" rx="4" class="pill-dashed" stroke-dasharray="4,3"/>
+    <text x="190" y="411" font-size="13" class="text-dim" text-anchor="middle" font-style="italic">+ your model</text>
+  </g>
+
+  <!-- MCP -->
+  <g>
+    <rect x="450" y="260" width="300" height="170" rx="8" class="panel" stroke-width="1.5"/>
+    <rect x="450" y="260" width="300" height="34" rx="8" class="mcp-header"/>
+    <rect x="450" y="284" width="300" height="10" class="mcp-header"/>
+    <text x="468" y="282" font-size="14" font-weight="700" class="mcp-text">MCP server</text>
+    <text x="732" y="282" font-size="12" class="mcp-text" text-anchor="end">:8765</text>
+
+    <text x="468" y="316" font-size="12" class="mcp-text" font-weight="700" letter-spacing="0.5">CAPABILITIES</text>
+
+    <rect x="468" y="324" width="127" height="28" rx="14" class="pill"/>
+    <text x="531" y="343" font-size="13" class="text-primary" text-anchor="middle">discovery</text>
+    <rect x="605" y="324" width="127" height="28" rx="14" class="pill"/>
+    <text x="668" y="343" font-size="13" class="text-primary" text-anchor="middle">control / scenes</text>
+
+    <rect x="468" y="358" width="127" height="28" rx="14" class="pill"/>
+    <text x="531" y="377" font-size="13" class="text-primary" text-anchor="middle">events</text>
+    <rect x="605" y="358" width="127" height="28" rx="14" class="pill-dashed" stroke-dasharray="4,3"/>
+    <text x="668" y="377" font-size="13" class="text-dim" text-anchor="middle" font-style="italic">+ your tool</text>
+  </g>
+
+  <!-- Home Assistant + Mosquitto -->
+  <g>
+    <rect x="860" y="260" width="300" height="170" rx="8" class="panel" stroke-width="1.5"/>
+    <rect x="860" y="260" width="300" height="34" rx="8" class="home-header"/>
+    <rect x="860" y="284" width="300" height="10" class="home-header"/>
+    <text x="878" y="282" font-size="14" font-weight="700" class="home-text">Home Assistant + Mosquitto</text>
+
+    <text x="878" y="316" font-size="12" class="home-text" font-weight="700" letter-spacing="0.5">DEVICES</text>
+
+    <rect x="878" y="324" width="127" height="28" rx="4" class="pill"/>
+    <text x="894" y="344" font-size="15">💡</text>
+    <text x="921" y="343" font-size="13" class="text-primary">lights</text>
+    <rect x="1015" y="324" width="127" height="28" rx="4" class="pill"/>
+    <text x="1031" y="344" font-size="15">🔒</text>
+    <text x="1058" y="343" font-size="13" class="text-primary">locks</text>
+
+    <rect x="878" y="358" width="127" height="28" rx="4" class="pill"/>
+    <text x="894" y="378" font-size="15">🌡️</text>
+    <text x="921" y="377" font-size="13" class="text-primary">climate</text>
+    <rect x="1015" y="358" width="127" height="28" rx="4" class="pill"/>
+    <text x="1031" y="378" font-size="15">🤖</text>
+    <text x="1058" y="377" font-size="13" class="text-primary">vacuum</text>
+
+    <rect x="878" y="392" width="264" height="28" rx="4" class="pill-dashed" stroke-dasharray="4,3"/>
+    <text x="1010" y="411" font-size="13" class="text-dim" text-anchor="middle" font-style="italic">+ your device</text>
+  </g>
+
+  <!-- ================================================================ -->
+  <!-- Inter-box arrows (Agent ↔ MCP ↔ HA)                              -->
+  <!-- ================================================================ -->
+
+  <path d="M 340 345 L 450 345" class="arrow-stroke" stroke-width="2"
+        fill="none" marker-start="url(#arr)" marker-end="url(#arr)"/>
+  <text x="395" y="332" font-size="12" class="arrow-fill" text-anchor="middle" font-weight="700">MCP</text>
+
+  <path d="M 750 345 L 860 345" class="arrow-stroke" stroke-width="2"
+        fill="none" marker-start="url(#arr)" marker-end="url(#arr)"/>
+  <text x="805" y="332" font-size="12" class="arrow-fill" text-anchor="middle" font-weight="700">control</text>
+
+</svg>

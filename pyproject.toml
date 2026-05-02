@@ -1,0 +1,107 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sandcastle-sim"
+version = "0.1.0"
+description = "Smart-home sandbox for AI agents. Bundles Home Assistant + MQTT + a fully simulated home + MCP server + a built-in CLI agent. Runs on a laptop or a Raspberry Pi."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [
+    {name = "Marco G."}
+]
+keywords = [
+    "smart-home", "home-assistant", "mqtt", "ai-agent", "mcp",
+    "model-context-protocol", "ollama", "raspberry-pi", "iot",
+    "simulator", "dev-kit",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Home Automation",
+    "Topic :: Software Development :: Libraries",
+]
+
+dependencies = [
+    # MCP server + client
+    "mcp[cli]>=1.2",
+    # MQTT (simulator)
+    "aiomqtt>=2.3",
+    # HTTP server (control + GUI host)
+    "aiohttp>=3.10",
+    # HTTP client (HA REST + bootstrap + agent)
+    "httpx>=0.27",
+    # WebSocket (HA + bootstrap)
+    "websockets>=12.0",
+    # Env loading
+    "python-dotenv>=1.0",
+    # Terminal styling — tables, panels, trees, syntax-aware printing
+    # for status / devices / events / chat banner
+    "rich>=13.7",
+    # Eval suite YAML loading (`sandcastle-sim eval`)
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+]
+
+[project.urls]
+Homepage = "https://github.com/itsMarco-G/sandcastle-sim"
+Documentation = "https://github.com/itsMarco-G/sandcastle-sim/tree/main/docs"
+Repository = "https://github.com/itsMarco-G/sandcastle-sim"
+Issues = "https://github.com/itsMarco-G/sandcastle-sim/issues"
+
+[project.scripts]
+# The sandcastle-sim command. Bare invocation `sandcastle-sim "prompt"`
+# routes to the agent; subcommands (up / down / sim / mcp / status)
+# wrap the rest of the workflow.
+sandcastle-sim = "sandcastle_sim.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["sandcastle_sim*"]
+
+[tool.setuptools.package-data]
+# The floor-plan GUI, the docker-compose, HA scenes / configuration,
+# and Mosquitto config travel with the package so pip-installed
+# users get a full working stack on `sandcastle-sim start`.
+"sandcastle_sim" = [
+    "data/gui/*.html",
+    "data/gui/**/*",
+    "data/seeds/docker-compose.yml",
+    "data/seeds/ha_config/*.yaml",
+    "data/seeds/mosquitto/config/*.conf",
+    "data/evals/*.yaml",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+# Pin the async fixture loop scope so pytest-asyncio 1.x doesn't
+# report each test twice (once running against the real fixture,
+# once with a re-init that finds the connection torn down). With
+# scope=function each test gets its own loop and runs exactly once.
+asyncio_default_fixture_loop_scope = "function"
+# `integration` tests need a live MCP + HA + simulator stack
+# (sandcastle-sim start). They're excluded from the default
+# `pytest` run and only fired by release-check / manual `-m
+# integration` invocations. Other markers can be added here as
+# the suite grows.
+markers = [
+    "integration: end-to-end tests requiring the full Docker stack",
+]
+# Default: exclude integration unless explicitly requested. Override
+# with `pytest -m integration` to run only integration, or `pytest
+# -m ""` to run everything.
+addopts = "-m 'not integration'"

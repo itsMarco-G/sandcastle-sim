@@ -1,0 +1,36 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: smart_home_mosquitto
+    ports:
+      - "127.0.0.1:1883:1883"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config:ro
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    restart: unless-stopped
+    networks:
+      - smart_home
+
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: smart_home_ha
+    ports:
+      - "127.0.0.1:8123:8123"
+    volumes:
+      - ./ha-config:/config
+    environment:
+      - TZ=Europe/London
+    depends_on:
+      - mosquitto
+    restart: unless-stopped
+    networks:
+      - smart_home
+
+volumes:
+  mosquitto_data:
+  mosquitto_log:
+
+networks:
+  smart_home:
+    driver: bridge

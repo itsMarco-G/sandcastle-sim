@@ -1,0 +1,19 @@
+# Smart Home Demo — minimal HA config.
+#
+# default_config bundles the integrations a typical install gets
+# (frontend, auth, areas, system_health, etc.). MQTT is set up via
+# the config-flow API by scripts/bootstrap_ha.py — modern HA no
+# longer accepts an `mqtt:` yaml block, so we don't try.
+
+default_config:
+
+# Curated demo scenes loaded from scenes.yaml. The smart-home MCP
+# server's apply_scene tool resolves these by id; save_scene creates
+# additional transient scenes that don't persist to disk.
+scene: !include scenes.yaml
+
+# Quiet logs except for MQTT (we want visibility while wiring up).
+logger:
+  default: warning
+  logs:
+    homeassistant.components.mqtt: info

@@ -1,0 +1,61 @@
+# Sandcastle Sim — quick eval suite
+#
+# Five sanity-check cases covering the major tool families
+# (control, scene, lock, climate, query). Run during iteration:
+#
+#     sandcastle-sim eval
+#
+# Each case is one prompt + what the agent should do. Tool-call
+# matching is subset-on-args (extra args are fine, missing required
+# ones fail). Final-state matching reads each entity via
+# get_device_state and compares the listed fields exactly.
+
+- name: light_off
+  prompt: "turn off the kitchen counter light"
+  expect:
+    tool_calls:
+      - name: turn_off
+        args:
+          entity_id: light.kitchen_counter
+    final_state:
+      light.kitchen_counter:
+        state: "off"
+
+- name: scene_named
+  prompt: "set up movie night"
+  expect:
+    tool_calls:
+      - name: apply_scene
+        args:
+          scene_id: scene.movie_night
+
+- name: lock_door
+  prompt: "lock the front door"
+  expect:
+    tool_calls:
+      - name: lock
+        args:
+          entity_id: lock.front_door
+    final_state:
+      lock.front_door:
+        state: "locked"
+
+- name: climate_setpoint
+  prompt: "set the temperature to 22"
+  expect:
+    tool_calls:
+      - name: set_climate
+        args:
+          entity_id: climate.home_thermostat
+          temperature: 22.0
+    final_state:
+      climate.home_thermostat:
+        temperature: 22.0   # HA maps target_temperature to attributes.temperature
+
+- name: state_query
+  prompt: "what lights are on right now?"
+  # Discovery-only prompt — the agent should call list_devices (or
+  # equivalent) but doesn't need to change any state. We don't
+  # assert exact tool name since list_devices vs get_device_state
+  # are both reasonable.
+  expect: {}

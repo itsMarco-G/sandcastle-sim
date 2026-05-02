@@ -1,0 +1,57 @@
+name: PR check (light)
+
+# Fast feedback on every push and PR. Targets ~1-2 min so contributors
+# don't wait on CI for routine changes. The full battery (Python
+# matrix, clean-venv wheel install, Docker integration) runs in
+# release-check.yml on tag push or manual dispatch.
+
+on:
+  push:
+    branches: [main, master]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "LICENSE"
+  pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "LICENSE"
+  workflow_dispatch:
+
+concurrency:
+  group: pr-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  light:
+    name: Lint + unit tests + build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install package + test deps
+        run: |
+          python -m pip install --upgrade pip build twine
+          pip install -e ".[dev]"
+
+      - name: Run unit tests
+        run: pytest tests/ -v
+
+      - name: Build wheel + sdist
+        run: python -m build
+
+      - name: Lint distribution metadata
+        run: twine check dist/*
+
+      - name: CLI smoke (in-place)
+        run: |
+          sandcastle-sim --version
+          sandcastle-sim --help > /dev/null

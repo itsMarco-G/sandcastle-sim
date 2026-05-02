@@ -1,0 +1,86 @@
+# Curated demo scenes — persistent, loaded from this file at HA boot.
+#
+# These are the "out-of-box" scenes the agent can apply by name.
+# Users can also create transient scenes at runtime via the
+# save_scene MCP tool; those live in HA's memory only and don't
+# persist across restarts.
+#
+# Each scene's `id` becomes the entity_id (`scene.<id>`); `name` is
+# the friendly label the agent reads in list_devices output.
+# `entities` is a flat dict of entity_id -> state/attribute payload.
+
+- id: movie_night
+  name: Movie Night
+  icon: mdi:movie
+  entities:
+    light.living_room_main:
+      state: on
+      brightness: 40
+    light.living_room_accent:
+      state: on
+      rgb_color: [120, 0, 200]
+      brightness: 180
+    light.kitchen_counter:
+      state: off
+    light.hallway_ceiling:
+      state: off
+    cover.living_room_blind:
+      state: closed
+      current_position: 0
+
+- id: cozy_bedroom
+  name: Cozy Bedroom
+  icon: mdi:bed
+  entities:
+    light.bedroom_main:
+      state: on
+      brightness: 60
+    light.bedroom_mood:
+      state: on
+      rgb_color: [255, 130, 90]
+      brightness: 120
+    cover.bedroom_blind:
+      state: closed
+      current_position: 0
+
+- id: morning_kitchen
+  name: Morning Kitchen
+  icon: mdi:coffee
+  entities:
+    light.kitchen_counter:
+      state: on
+      brightness: 240
+    switch.coffee_machine:
+      state: on
+    cover.living_room_blind:
+      state: open
+      current_position: 100
+
+- id: goodnight
+  name: Goodnight
+  icon: mdi:sleep
+  entities:
+    light.living_room_main:
+      state: off
+    light.living_room_accent:
+      state: off
+    light.kitchen_counter:
+      state: off
+    light.hallway_ceiling:
+      state: off
+    light.bedroom_main:
+      state: off
+    light.bedroom_mood:
+      state: off
+    light.bedroom_2_main:
+      state: off
+    switch.coffee_machine:
+      state: off
+    lock.front_door:
+      state: locked
+    cover.living_room_blind:
+      state: closed
+      current_position: 0
+    cover.bedroom_blind:
+      state: closed
+      current_position: 0
