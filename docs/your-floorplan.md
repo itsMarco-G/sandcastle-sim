@@ -53,79 +53,65 @@ instead.
 
 ## Path A — Sketch from a description
 
-Use this path when you don't have a floor plan image. You describe
-your home; the agent generates a simple SVG, saves it to
-`.sandcastle/images/`, and uses it as the GUI backdrop.
+Use this path when you don't have a floor plan image. Describe
+your home in words; the agent generates a simple sketch and uses
+it as the GUI background.
 
 **Prompt:**
 
-> Generate a simple top-down SVG floor plan for my home and use it
-> as the GUI background. The layout: a 1-bedroom apartment with a
-> combined kitchen/living area, a bedroom, a bathroom, and a small
-> hallway. Save the SVG to `.sandcastle/images/my_home.svg` and
-> reference it from `.sandcastle/floorplan.json`. Reuse the existing
-> room *keys* (bedroom, bathroom, kitchen, hallway) even if my
-> rooms are differently shaped or labelled — only the display
-> `name` field should change. Tell me when to refresh.
+> Sketch a floor plan for my home and use it as the GUI background.
+> My home is a 1-bedroom apartment: combined kitchen and living
+> area, a bedroom, a bathroom, and a small hallway. Tell me what
+> you did and when to refresh.
 
-Tweak the description for your home — number of bedrooms, whether
+(Tweak the description to match your home — bedrooms, whether
 kitchen and living are separate, whether you have a study, etc.
-The agent draws what you described.
+The agent draws what you described.)
 
 **What you should see:**
 
-The agent will:
-
-- Compose a small SVG (rectangles + labels) matching your home's
-  shape.
-- Save it to `.sandcastle/images/my_home.svg`.
-- Edit `.sandcastle/floorplan.json` with `backdrop: "my_home.svg"`,
-  the matching `viewbox`, and reshaped `rooms` rectangles aligned
-  to the SVG it just drew.
-- Run `sandcastle-sim floorplan auto --force` to re-place existing
-  devices into the new room shapes.
-- Tell you to hard-refresh.
-
-After the refresh: the bundled blueprint is gone; your home's
-schematic is in its place; your devices land in their new rooms.
+The agent reports back, naming the SVG it created, the file it
+edited, and your refresh cue. After the hard-refresh: the bundled
+blueprint is gone; your home's schematic is in its place; your
+devices land in their new rooms.
 
 ---
 
 ## Path B — Use your real floor plan image
 
-Use this path when you have an actual floor plan (real-estate
-listing PNG, architect drawing, vacuum map, etc.) you want as the
-GUI background.
+Use this path when you already have a floor plan (real-estate
+listing PNG, architect drawing, vacuum map, etc.) you'd like as
+the GUI background.
 
-Drop your image into `.sandcastle/images/`:
+**Step 1.** Drop the image into the project directory. The project
+root works fine:
 
 ```sh
-mkdir -p .sandcastle/images
-cp ~/Downloads/my_apartment.png .sandcastle/images/
+cp ~/Downloads/my_apartment.png .
 ```
 
-**Prompt:**
+(The project directory is what your coding agent has access to. If
+the file lives only in `~/Downloads/`, your agent may not be able
+to read it.)
 
-> Use my floor plan image at `.sandcastle/images/my_apartment.png`
-> as the GUI background. Align the existing rooms to what you see
-> in the image, and tell me when to refresh.
+**Step 2.** Prompt your agent:
+
+> Use this as my floor plan: `./my_apartment.png`. Tell me what you
+> did and when to refresh.
+
+(Replace the filename with whatever you dropped in. If you put the
+image in a subdirectory, give that path instead — e.g., `./images/
+my_apartment.png`.)
 
 **What you should see:**
 
-The agent (following the procedure in `AGENTS.md`) will:
-
-- Read the image; identify rooms and the image's pixel dimensions.
-- Edit `.sandcastle/floorplan.json` with `backdrop: "my_apartment.png"`,
-  the matching `viewbox`, and reshaped `rooms` rectangles aligned
-  to the image.
-- Run `sandcastle-sim floorplan auto --force` if your devices end
-  up outside the new room shapes.
-- Tell you to hard-refresh `http://localhost:8766`
-  (**Ctrl+Shift+R** / **Cmd+Shift+R**).
-
-After the refresh: the JS-drawn six-room blueprint disappears and
-your image takes its place. Devices render on top in their
-(re-)laid-out positions.
+The agent will move the file into the right place inside the
+project, edit `.sandcastle/floorplan.json` to reference it, and
+report back: where it placed the image, what it edited, and your
+refresh cue (`http://localhost:8766`, **Ctrl+Shift+R** /
+**Cmd+Shift+R**). After the refresh: the JS-drawn blueprint
+disappears and your image takes its place. Devices render on top in
+their (re-)laid-out positions.
 
 ---
 

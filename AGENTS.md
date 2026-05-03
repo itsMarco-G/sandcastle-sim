@@ -246,9 +246,14 @@ share one mechanism:
 
 Procedure for both:
 
-1. **Image location.** It lives at
-   `<workdir>/.sandcastle/images/<filename>`. If the user has dropped
-   it elsewhere (e.g., the project root), copy it there first.
+1. **Image location.** The canonical home is
+   `<workdir>/.sandcastle/images/<filename>`. The user typically
+   drops a fresh image into the project directory (project root
+   or a subdirectory they name); your job is to **move** it from
+   there into `<workdir>/.sandcastle/images/` before referencing
+   it. Don't expect the user to know or use that path themselves.
+   For Path A (you generate the SVG yourself), write it directly
+   into the canonical location.
 2. **Read the image.** Use vision to identify room boundaries and the
    image's pixel dimensions.
 3. **Edit `<workdir>/.sandcastle/floorplan.json`:**
@@ -277,23 +282,30 @@ Procedure for both:
    nudge specific rooms or devices." Use the standard placement
    vocabulary from `docs/floorplan.md` §3.
 
-### Always tell the user when and how to verify
+### Always report what you did and how to verify
 
-After any customisation, end your turn with a clear "what to do
-next" line. Default phrasings:
+End every customisation turn with two beats:
 
-- Floor-plan-only edit → "Hard-refresh the browser at
-  `http://localhost:8766` (Ctrl+Shift+R / Cmd+Shift+R) to see the
-  change."
-- Topology + sim restart → "After `sandcastle-sim status` shows all
-  UP, hard-refresh the browser. Try clicking the new device, or run
-  `sandcastle-sim '<natural-language test>'`."
-- Validation failure → tell the user *why* the edit was rejected
-  (the validator's error message is human-readable; surface it),
-  and propose a corrected edit.
+1. **What changed.** A short summary naming each file you created
+   or modified, plus where any moved/generated assets ended up.
+   Example: *"Created `.sandcastle/images/my_home.svg`, updated
+   `.sandcastle/floorplan.json` (`backdrop`, `viewbox`, all six
+   room rects)."* Don't make the user grep their filesystem to
+   figure out the new state.
+2. **What to do next.** A clear "verify like this" line:
 
-The user shouldn't have to remember to refresh — that's your job to
-prompt them.
+   - Floor-plan-only edit → "Hard-refresh the browser at
+     `http://localhost:8766` (Ctrl+Shift+R / Cmd+Shift+R) to see
+     the change."
+   - Topology + sim restart → "After `sandcastle-sim status` shows
+     all UP, hard-refresh the browser. Try clicking the new
+     device, or run `sandcastle-sim '<natural-language test>'`."
+   - Validation failure → surface the validator's error verbatim
+     (it's human-readable), explain what triggered it, and propose
+     a corrected edit.
+
+The user should never have to remember to refresh, or guess where
+you saved a file. That's the runbook's job.
 
 ### Don'ts
 
