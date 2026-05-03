@@ -1,101 +1,73 @@
-# Curated demo scenes — persistent, loaded from this file at HA boot.
-#
-# These are the "out-of-box" scenes the agent can apply by name.
-# Users can also create transient scenes at runtime via the
-# save_scene MCP tool; those live in HA's memory only and don't
-# persist across restarts.
-#
-# Each scene's `id` becomes the entity_id (`scene.<id>`); `name` is
-# the friendly label the agent reads in list_devices output.
-# `entities` is a flat dict of entity_id -> state/attribute payload.
-
-- id: welcome_guest
-  name: Welcome Guest
-  icon: mdi:account-group
-  entities:
-    light.hallway_ceiling:
-      state: on
-      brightness: 220
-    light.kitchen_counter:
-      state: on
-      brightness: 220
-    light.living_room_main:
-      state: on
-      brightness: 220
-    light.bedroom_main:
-      state: on
-      brightness: 220
-    light.bedroom_2_main:
-      state: on
-      brightness: 220
-
 - id: movie_night
   name: Movie Night
   icon: mdi:movie
   entities:
     light.living_room_main:
-      state: on
+      state: true
       brightness: 40
     light.living_room_accent:
-      state: on
-      rgb_color: [120, 0, 200]
+      state: true
+      rgb_color:
+      - 120
+      - 0
+      - 200
       brightness: 180
     light.kitchen_counter:
-      state: off
+      state: false
     light.hallway_ceiling:
-      state: off
+      state: false
     cover.living_room_blind:
       state: closed
       current_position: 0
-
 - id: cozy_bedroom
   name: Cozy Bedroom
   icon: mdi:bed
   entities:
     light.bedroom_main:
-      state: on
+      state: true
       brightness: 60
     light.bedroom_mood:
-      state: on
-      rgb_color: [255, 130, 90]
+      state: true
+      rgb_color:
+      - 255
+      - 130
+      - 90
       brightness: 120
     cover.bedroom_blind:
       state: closed
       current_position: 0
-
 - id: morning_kitchen
   name: Morning Kitchen
   icon: mdi:coffee
   entities:
     light.kitchen_counter:
-      state: on
+      state: true
       brightness: 240
     switch.coffee_machine:
-      state: on
+      state: true
     cover.living_room_blind:
       state: open
       current_position: 100
-
 - id: goodnight
   name: Goodnight
   icon: mdi:sleep
   entities:
     light.living_room_main:
-      state: off
+      state: false
     light.living_room_accent:
-      state: off
+      state: false
     light.kitchen_counter:
-      state: off
+      state: false
     light.hallway_ceiling:
-      state: off
+      state: false
     light.bedroom_main:
-      state: off
+      state: false
     light.bedroom_mood:
-      state: off
+      state: false
     light.bedroom_2_main:
-      state: off
+      state: false
     switch.coffee_machine:
-      state: off
+      state: false
     lock.front_door:
       state: locked
     cover.living_room_blind:
@@ -104,3 +76,22 @@
     cover.bedroom_blind:
       state: closed
       current_position: 0
+- id: welcome_guest
+  name: Welcome Guest
+  icon: mdi:account-group
+  entities:
+    light.hallway_ceiling:
+      state: true
+      brightness: 220
+    light.kitchen_counter:
+      state: true
+      brightness: 220
+    light.living_room_main:
+      state: true
+      brightness: 220
+    light.bedroom_main:
+      state: true
+      brightness: 220
+    light.bedroom_2_main:
+      state: true
+      brightness: 220

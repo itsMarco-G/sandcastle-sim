@@ -63,7 +63,13 @@ def _ensure_workdir(workdir: Path) -> Path:
     materialise a minimal layout in either the user's cwd or
     ``~/.local/share/sandcastle-sim``: copy the seed
     docker-compose.yml, ha_config/, mosquitto/ from package data.
-    Idempotent — only copies missing files, never overwrites.
+
+    Initial setup is idempotent — only copies missing files, never
+    overwrites user-edited configs. After that, ``_merge_new_scenes``
+    additively pulls in any scenes the bundle has gained since the
+    workdir was created (so an upgrade from 0.1.0 picks up new
+    bundled scenes like ``welcome_guest`` without touching anything
+    the user edited locally).
     """
     workdir.mkdir(parents=True, exist_ok=True)
     seeds = _data_path("seeds")
@@ -84,7 +90,93 @@ def _ensure_workdir(workdir: Path) -> Path:
         shutil.copy2(src, dst)
         print(f"  + {dst.relative_to(workdir)}")
 
+    added = _merge_new_scenes(
+        seeds / "ha_config" / "scenes.yaml",
+        workdir / "ha-config" / "scenes.yaml",
+    )
+    if added:
+        _try_reload_ha_scenes(workdir)
+
     return workdir
+
+
+def _merge_new_scenes(seed: Path, dst: Path) -> List[str]:
+    """Add any scenes the bundle has that the workdir doesn't.
+
+    Compares by ``id``. Existing scenes are never modified — if the
+    user edited ``movie_night``'s entities locally we leave that
+    alone — but new ids (``welcome_guest`` shipped in 0.1.1, plus
+    anything later) are appended verbatim. Returns the list of ids
+    that were added.
+    """
+    if not seed.is_file() or not dst.is_file():
+        return []
+    try:
+        import yaml  # local import — yaml is already a runtime dep
+    except ImportError:  # pragma: no cover
+        return []
+
+    try:
+        seed_scenes = yaml.safe_load(seed.read_text()) or []
+        dst_scenes = yaml.safe_load(dst.read_text()) or []
+    except yaml.YAMLError:
+        return []
+    if not isinstance(seed_scenes, list) or not isinstance(dst_scenes, list):
+        return []
+
+    have = {s.get("id") for s in dst_scenes if isinstance(s, dict)}
+    new = [
+        s for s in seed_scenes
+        if isinstance(s, dict) and s.get("id") and s["id"] not in have
+    ]
+    if not new:
+        return []
+
+    added_ids = [s["id"] for s in new]
+    # Append by re-dumping the full list (preserves YAML quoting better
+    # than concatenating raw text, and survives a one-off blank line).
+    merged = dst_scenes + new
+    dst.write_text(yaml.safe_dump(merged, sort_keys=False))
+    print(f"  + ha-config/scenes.yaml: added {', '.join(added_ids)}")
+    return added_ids
+
+
+def _try_reload_ha_scenes(workdir: Path) -> None:
+    """If HA is already running, tell it to reload scenes.yaml so
+    newly-merged scenes show up without a full restart. Silent
+    no-op on cold start (HA will load the file naturally on boot)
+    or any networking / auth hiccup — never blocks bootstrap."""
+    env_path = workdir / ".env"
+    if not env_path.is_file():
+        return
+    token = ""
+    url = "http://localhost:8123"
+    for line in env_path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, _, v = line.partition("=")
+        v = v.strip().strip('"').strip("'")
+        if k.strip() == "HA_TOKEN":
+            token = v
+        elif k.strip() == "HA_URL" and v:
+            url = v
+    if not token:
+        return
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            f"{url.rstrip('/')}/api/services/scene/reload",
+            method="POST",
+            headers={"Authorization": f"Bearer {token}"},
+            data=b"{}",
+        )
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            if 200 <= resp.status < 300:
+                print("  · HA scenes reloaded")
+    except Exception:
+        # HA isn't up yet, or token is stale, or network blip — fine.
+        pass
 
 
 def _resolve_workdir(workdir_arg: Optional[str]) -> Path:

@@ -20,4 +20,4 @@ The dev-facing API is the CLI: see ``sandcastle_sim.cli`` and
 modules are publicly importable.
 """
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
