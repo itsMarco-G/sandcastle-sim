@@ -83,35 +83,27 @@ Use this path when you already have a floor plan (real-estate
 listing PNG, architect drawing, vacuum map, etc.) you'd like as
 the GUI background.
 
-**Step 1.** Drop the image into the project directory. The project
-root works fine:
-
-```sh
-cp ~/Downloads/my_apartment.png .
-```
-
-(The project directory is what your coding agent has access to. If
-the file lives only in `~/Downloads/`, your agent may not be able
-to read it.)
+**Step 1.** Save a floor plan image in your project directory —
+e.g., `my_apartment.png` in the project root. Your coding agent
+needs read access to it, and the project directory is where it has
+that.
 
 **Step 2.** Prompt your agent:
 
-> Use this as my floor plan: `./my_apartment.png`. Tell me what you
-> did and when to refresh.
+> Use the image `my_apartment.png` as my floor plan and set it as
+> the GUI background. Tell me what you did and when to refresh.
 
-(Replace the filename with whatever you dropped in. If you put the
-image in a subdirectory, give that path instead — e.g., `./images/
-my_apartment.png`.)
+(Replace the filename with whatever you saved.)
 
 **What you should see:**
 
-The agent will move the file into the right place inside the
+The agent will move the image into the right place inside the
 project, edit `.sandcastle/floorplan.json` to reference it, and
-report back: where it placed the image, what it edited, and your
+report back: where it placed the file, what it edited, and your
 refresh cue (`http://localhost:8766`, **Ctrl+Shift+R** /
 **Cmd+Shift+R**). After the refresh: the JS-drawn blueprint
-disappears and your image takes its place. Devices render on top in
-their (re-)laid-out positions.
+disappears and your image takes its place. Devices render on top
+in their (re-)laid-out positions.
 
 ---
 
