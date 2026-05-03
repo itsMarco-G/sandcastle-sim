@@ -141,24 +141,13 @@ The report leads with cases that used to pass and now fail. Cases that got notic
 
 ## Next steps
 
-Two coding-agent-driven walkthroughs make the sandbox yours, in
-about 15–20 minutes total. Each is one prompt per task — paste it
-into Claude Code / Cursor / Codex / Copilot in the project root.
+Two short coding-agent-driven walkthroughs make the sandbox yours.
+Paste each prompt into Claude Code / Cursor / Codex / Copilot in
+the project root.
 
-### Customise your devices
-
-Tour what's running, move devices on the floor plan, add a new device
-to your home. See [docs/your-devices.md](docs/your-devices.md).
-
-### Customise your floor plan
-
-Replace the bundled six-room blueprint with an image of your real
-home — or a simple sketch the agent generates from your description.
-See [docs/your-floorplan.md](docs/your-floorplan.md).
-
-### Connect cloud models
-
-_Coming soon._
+- [docs/your-devices.md](docs/your-devices.md) — tour the stack, move devices, add new ones
+- [docs/your-floorplan.md](docs/your-floorplan.md) — replace the blueprint with your real home (image or agent-sketched)
+- Connect cloud models — _coming soon_
 
 ## Read more
 
