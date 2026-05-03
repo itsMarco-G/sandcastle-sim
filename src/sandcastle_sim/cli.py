@@ -27,6 +27,7 @@ import argparse
 import itertools
 import os
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -206,6 +207,41 @@ def _port_open(port: int, host: str = "127.0.0.1") -> bool:
         return False
     finally:
         s.close()
+
+
+def _find_port_pid(port: int) -> Optional[int]:
+    """Return the PID listening on port, or None if not found / lsof unavailable."""
+    try:
+        r = subprocess.run(
+            ["lsof", "-t", f"-i:{port}", "-sTCP:LISTEN"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            return int(r.stdout.strip().split()[0])
+    except Exception:
+        pass
+    return None
+
+
+def _evict_port(port: int) -> Optional[int]:
+    """SIGTERM (then SIGKILL) whatever is listening on port. Returns evicted PID."""
+    pid = _find_port_pid(port)
+    if pid is None:
+        return None
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError:
+        return pid
+    deadline = time.monotonic() + 3.0
+    while time.monotonic() < deadline and _port_open(port):
+        time.sleep(0.2)
+    if _port_open(port):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+        time.sleep(0.3)
+    return pid
 
 
 # --------------------------------------------------------------------------- #
@@ -676,6 +712,16 @@ def cmd_start(args: argparse.Namespace) -> int:
                 f"already running [dim](PID {existing})[/]"
             )
             continue
+        # Port occupied by a process we've lost track of (e.g. a stale server
+        # that survived a previous reset). Evict it so the fresh component can
+        # bind. Ports 8765/8766 are sandcastle-specific, so this is safe.
+        if _port_open(comp.port):
+            evicted = _evict_port(comp.port)
+            if evicted:
+                Console().print(
+                    f"  [yellow]![/] evicted stale process on "
+                    f":{comp.port} (PID {evicted})"
+                )
         with _Spinner(comp.label) as sp:
             pid = runtime.start_component(workdir, comp, env)
             ok = runtime.wait_for_port("127.0.0.1", comp.port, timeout=15)
@@ -710,18 +756,25 @@ def cmd_stop(args: argparse.Namespace) -> int:
     for comp in runtime.COMPONENTS:
         pid = runtime.status_component(workdir, comp)
         if pid is None:
-            print(f"  • {comp.label}: not running")
-            continue
-        print(f"  • {comp.label}: SIGTERM -> PID {pid}", end="", flush=True)
-        result = runtime.stop_component(
-            workdir, comp, timeout=10.0, progress=True,
-        )
-        if result == "stopped":
-            print(" stopped")
-        elif result == "killed":
-            print(" KILLED (didn't respond to SIGTERM)")
+            print(f"  • {comp.label}: not running", end="", flush=True)
         else:
-            print(f" {result}")
+            print(f"  • {comp.label}: SIGTERM -> PID {pid}", end="", flush=True)
+            result = runtime.stop_component(
+                workdir, comp, timeout=10.0, progress=True,
+            )
+            if result == "stopped":
+                print(" stopped", end="", flush=True)
+            elif result == "killed":
+                print(" KILLED (didn't respond to SIGTERM)", end="", flush=True)
+            else:
+                print(f" {result}", end="", flush=True)
+        # Evict anything still holding the port (orphaned process with a
+        # stale/missing PID file that stop_component couldn't reach).
+        if _port_open(comp.port):
+            evicted = _evict_port(comp.port)
+            if evicted:
+                print(f" (evicted stale PID {evicted} on :{comp.port})", end="")
+        print()
 
     if args.keep_docker:
         print("  • Mosquitto + Home Assistant: kept (--keep-docker)")

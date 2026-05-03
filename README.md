@@ -17,8 +17,7 @@ For developers building smart-home agents. One command brings up the full stack.
 - [Install](#install)
 - [Quickstart](#quickstart)
 - [Eval suite](#eval-suite)
-- [Connect your agent](#connect-your-agent)
-- [Customize](#customize)
+- [Next steps](#next-steps)
 - [Read more](#read-more)
 
 ## Install
@@ -81,7 +80,9 @@ A chat panel shows up listing the model and the available tools. For your first 
 set up welcome guest
 ```
 
-The hallway, kitchen, living-room, and both bedroom lights all turn on across the floor plan in real time, with the tool calls the agent fired printed inline. From there, riff off the tool list the chat panel shows.
+![set up welcome guest](docs/welcome-guest.png)
+
+From there, riff off the tool list the chat panel shows.
 
 Run `sandcastle-sim --help` for the full command list.
 
@@ -138,35 +139,15 @@ The report leads with cases that used to pass and now fail. Cases that got notic
 
 [evals/quick.yaml](evals/quick.yaml) is the starter suite. Write your own to match your agent's acceptance bar.
 
-## Connect your agent
+## Next steps
 
-Point any MCP client at `http://localhost:8765/mcp/`:
+### Extend the simulator
 
-```python
-from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+Add devices, tools, and scenes to make the sandbox match your target home. See [docs/extending-the-simulator.md](docs/extending-the-simulator.md).
 
-async with streamablehttp_client("http://localhost:8765/mcp/") as (r, w, _):
-    async with ClientSession(r, w) as session:
-        await session.initialize()
-        tools = await session.list_tools()
-```
+### Connect cloud models
 
-[docs/integrating-your-agent.md](docs/integrating-your-agent.md) covers the Anthropic SDK, OpenAI SDK, and raw streamable-HTTP samples.
-
-## Customize
-
-The kit is set up to be forkable. Topology defines what's in the home, the simulator brings devices to life, the MCP server exposes the contract your agent calls. Here's where each one lives.
-
-- `src/sandcastle_sim/simulator/topology.py` : the home's device list, areas, friendly names
-- `src/sandcastle_sim/simulator/` : one module per device type (lights, locks, climate, sensors, vacuum, covers)
-- `src/sandcastle_sim/mcp_server/server.py` : MCP tool surface and HA integration
-- `src/sandcastle_sim/agent/` : built-in Ollama + MCP agent (one-shot and chat REPL)
-- `src/sandcastle_sim/data/gui/index.html` : floor-plan GUI
-- `evals/quick.yaml` : starter eval suite for the regression net
-- `pyproject.toml` : runtime and dev deps; optional extras `.[dev]`
-
-[docs/extending-the-simulator.md](docs/extending-the-simulator.md) for the deep dive.
+_Coming soon._
 
 ## Read more
 
