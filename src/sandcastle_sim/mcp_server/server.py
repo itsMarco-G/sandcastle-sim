@@ -357,13 +357,15 @@ async def list_devices(
         # Skip HA infrastructure (sun, backup, weather, ...) and
         # diagnostic/config sub-entities. Real user-facing devices
         # have entity_category == None and a platform that's a
-        # real integration (mqtt, matter, etc.).
-        if entity_entry is None:
-            continue
-        if entity_entry.get("entity_category"):
-            continue
-        if entity_entry.get("platform") in INFRA_PLATFORMS:
-            continue
+        # real integration (mqtt, matter, etc.). YAML-defined
+        # entities (scenes loaded via `scene: !include scenes.yaml`,
+        # most notably) have no registry entry at all — keep them
+        # since the domain filter has already ruled out junk.
+        if entity_entry is not None:
+            if entity_entry.get("entity_category"):
+                continue
+            if entity_entry.get("platform") in INFRA_PLATFORMS:
+                continue
         device = _format_device(state, entities_by_id, devices_by_id)
         if area and device["area"] != area:
             continue
