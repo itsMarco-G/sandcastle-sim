@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "viewbox": [0, 0, 1100, 720],
+  "rooms": {
+    "bedroom":     { "x": 0,   "y": 0,   "w": 380,  "h": 260, "name": "Bedroom" },
+    "bathroom":    { "x": 380, "y": 0,   "w": 200,  "h": 260, "name": "Bathroom" },
+    "bedroom_2":   { "x": 580, "y": 0,   "w": 520,  "h": 260, "name": "Bedroom 2" },
+    "hallway":     { "x": 0,   "y": 260, "w": 1100, "h": 70,  "name": "Hallway" },
+    "kitchen":     { "x": 0,   "y": 330, "w": 350,  "h": 270, "name": "Kitchen" },
+    "living_room": { "x": 350, "y": 330, "w": 750,  "h": 270, "name": "Living Room" }
+  },
+  "devices": {
+    "light.bedroom_main":                    { "area": "bedroom",     "type": "light",                "x": 130, "y": 75 },
+    "light.bedroom_mood":                    { "area": "bedroom",     "type": "light",   "rgb": true, "x": 260, "y": 75 },
+    "sensor.bedroom_temperature":            { "area": "bedroom",     "type": "temp",                 "x": 70,  "y": 220 },
+    "cover.bedroom_blind":                   { "area": "bedroom",     "type": "cover",                "x": 340, "y": 30 },
+
+    "light.bedroom_2_main":                  { "area": "bedroom_2",   "type": "light",                "x": 130, "y": 90 },
+    "sensor.bedroom_2_temperature":          { "area": "bedroom_2",   "type": "temp",                 "x": 350, "y": 90 },
+
+    "light.hallway_ceiling":                 { "area": "hallway",     "type": "light",                "x": 100, "y": 25 },
+    "lock.front_door":                       { "area": "hallway",     "type": "lock",                 "x": 250, "y": 25 },
+    "binary_sensor.front_door_contact":      { "area": "hallway",     "type": "contact",              "x": 400, "y": 25 },
+    "binary_sensor.hallway_motion":          { "area": "hallway",     "type": "motion",               "x": 600, "y": 25 },
+    "binary_sensor.hallway_smoke":           { "area": "hallway",     "type": "smoke",                "x": 800, "y": 25 },
+
+    "light.kitchen_counter":                 { "area": "kitchen",     "type": "light",                "x": 100, "y": 80 },
+    "switch.coffee_machine":                 { "area": "kitchen",     "type": "switch",               "x": 230, "y": 80 },
+    "binary_sensor.kitchen_window_contact":  { "area": "kitchen",     "type": "contact",              "x": 100, "y": 190 },
+    "binary_sensor.kitchen_leak":            { "area": "kitchen",     "type": "leak",                 "x": 230, "y": 190 },
+
+    "light.living_room_main":                { "area": "living_room", "type": "light",                "x": 100, "y": 80 },
+    "light.living_room_accent":              { "area": "living_room", "type": "light",   "rgb": true, "x": 250, "y": 80 },
+    "binary_sensor.living_room_motion":      { "area": "living_room", "type": "motion",               "x": 450, "y": 80 },
+    "cover.living_room_blind":               { "area": "living_room", "type": "cover",                "x": 620, "y": 80 },
+
+    "climate.home_thermostat":               { "area": null, "type": "climate" },
+    "sensor.power_meter":                    { "area": null, "type": "power" },
+    "vacuum.robot_vacuum":                   { "area": null, "type": "vacuum" }
+  }
+}

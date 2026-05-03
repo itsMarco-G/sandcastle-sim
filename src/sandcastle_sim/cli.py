@@ -35,7 +35,7 @@ import threading
 import time
 from importlib import resources
 from pathlib import Path
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 
 def _data_path(*parts: str) -> Path:
@@ -589,6 +589,7 @@ def cmd_sim(args: argparse.Namespace) -> int:
     """Run the device simulator + floor-plan GUI server (foreground)."""
     workdir = _resolve_workdir(args.workdir)
     env = os.environ.copy()
+    env["SANDCASTLE_WORKDIR"] = str(workdir)
     # Ensure .env loads from the workdir's dotfile if present.
     if (workdir / ".env").is_file():
         env.setdefault("DOTENV_PATH", str(workdir / ".env"))
@@ -605,6 +606,7 @@ def cmd_mcp(args: argparse.Namespace) -> int:
     """Run the smart-home MCP server (foreground)."""
     workdir = _resolve_workdir(args.workdir)
     env = os.environ.copy()
+    env["SANDCASTLE_WORKDIR"] = str(workdir)
     if (workdir / ".env").is_file():
         # Source vars from .env so HA_URL / HA_TOKEN are available.
         for line in (workdir / ".env").read_text().splitlines():
@@ -639,6 +641,15 @@ def cmd_start(args: argparse.Namespace) -> int:
     if not _running_in_repo_checkout():
         print(f"Workdir: {workdir}")
         _ensure_workdir(workdir)
+
+    # Seed the user's home (floorplan + topology) into <workdir>/.sandcastle/.
+    # Idempotent: only copies missing files, never overwrites edits.
+    # Runs in both repo-checkout and pip-install modes — the user's
+    # customisations live here regardless of how the kit was installed.
+    from .floorplan import seed_workdir
+    seed_summary = seed_workdir(workdir)
+    if seed_summary["created"]:
+        print(f"  + .sandcastle/{', .sandcastle/'.join(seed_summary['created'])}")
 
     from rich.console import Console
     Console().print("[bold cyan]Starting Sandcastle Sim ...[/]")
@@ -832,8 +843,14 @@ def _run_bootstrap(workdir: Path, quiet: bool = False) -> int:
 
 
 def _env_with_dotenv(workdir: Path) -> dict:
-    """Return a copy of the environment with workdir/.env overlaid."""
+    """Return a copy of the environment with workdir/.env overlaid.
+
+    Also sets ``SANDCASTLE_WORKDIR`` so subprocesses (sim, mcp, the
+    topology loader, the floorplan resolver) can find the user's
+    persisted home in ``<workdir>/.sandcastle/``.
+    """
     env = os.environ.copy()
+    env["SANDCASTLE_WORKDIR"] = str(workdir)
     env_path = workdir / ".env"
     if env_path.is_file():
         for line in env_path.read_text().splitlines():
@@ -892,6 +909,214 @@ def cmd_status(args: argparse.Namespace) -> int:
     console = Console()
     console.print(table)
     console.print(f"\n[dim]Workdir:[/] {workdir}")
+    return 0
+
+
+def cmd_floorplan(args: argparse.Namespace) -> int:
+    """Floor-plan layout commands. ``floorplan auto`` is the only one today."""
+    subcmd = getattr(args, "floorplan_cmd", None)
+    if subcmd == "auto":
+        return _floorplan_auto(args)
+    print("Usage: sandcastle-sim floorplan auto [--force]")
+    return 1
+
+
+# Maps HA domain (+ device_class for sensors) to the floor-plan `type`
+# string the GUI's renderers understand. Anything unmapped becomes
+# `default` (still placed, but rendered with the generic renderer).
+def _floorplan_type(device: dict) -> Optional[str]:
+    domain = device.get("domain") or ""
+    attrs = device.get("attributes") or {}
+    dc = attrs.get("device_class")
+    if domain == "light":     return "light"
+    if domain == "switch":    return "switch"
+    if domain == "lock":      return "lock"
+    if domain == "cover":     return "cover"
+    if domain == "climate":   return "climate"
+    if domain == "vacuum":    return "vacuum"
+    if domain == "sensor":
+        if dc == "temperature": return "temp"
+        if dc == "power":       return "power"
+        return None
+    if domain == "binary_sensor":
+        if dc == "motion":               return "motion"
+        if dc in ("door", "window", "opening"): return "contact"
+        if dc == "moisture":             return "leak"
+        if dc == "smoke":                return "smoke"
+        return None
+    return None
+
+
+def _load_dotenv_into(env: dict, workdir: Path) -> None:
+    """Mirror cmd_mcp's .env loader. Idempotent — won't clobber existing vars."""
+    path = workdir / ".env"
+    if not path.is_file():
+        return
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, _, v = line.partition("=")
+        env.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+
+
+def _floorplan_auto(args: argparse.Namespace) -> int:
+    """Re-layout the floor plan from the live HA inventory.
+
+    Connects to the MCP server for area/domain resolution AND to HA's
+    REST `/api/states` for full per-entity attributes (the MCP path
+    strips `device_class`, which we need to map binary_sensor → motion
+    / contact / leak / smoke). Result is run through `auto_layout`
+    and written back.
+
+    Default behaviour preserves coordinates for entities already in
+    the file; `--force` re-places everything from scratch.
+    """
+    import asyncio
+    import json as _json
+
+    from . import floorplan as fp
+
+    mcp_url = args.mcp_url
+    force = bool(getattr(args, "force", False))
+
+    # Load .env so HA_TOKEN / HA_URL are populated. Same pattern as
+    # cmd_mcp — keeps the surface consistent.
+    _load_dotenv_into(os.environ, Path.cwd())
+
+    # Source-of-truth: workdir copy if seeded, else the bundled seed.
+    # `floorplan auto` writes to the workdir copy so the package is
+    # never mutated. --out only redirects the *write* — useful for
+    # dry-running without touching the live floor plan.
+    workdir = _resolve_workdir(getattr(args, "workdir", None))
+    canonical = fp.resolve_floorplan_path(workdir)
+    if not canonical.exists():
+        print(f"floorplan.json not found at {canonical}", file=sys.stderr)
+        return 2
+
+    out_arg = getattr(args, "out", None)
+    if out_arg:
+        target = Path(out_arg)
+    else:
+        # Always write to workdir's state dir — never the package seed.
+        target = workdir / ".sandcastle" / "floorplan.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        existing = fp.load_floorplan(canonical)
+    except fp.FloorplanError as exc:
+        print(f"existing {canonical} is invalid: {exc}", file=sys.stderr)
+        return 2
+
+    rooms = existing.get("rooms", {})
+    existing_devices = existing.get("devices", {})
+
+    # Pull inventory from the MCP server.
+    try:
+        from mcp import ClientSession
+        from mcp.client.streamable_http import streamablehttp_client
+    except ImportError:
+        print(
+            "The `mcp` package is required for `floorplan auto`. "
+            "Install it via `pip install mcp`.",
+            file=sys.stderr,
+        )
+        return 2
+
+    import aiohttp
+
+    ha_url = os.environ.get("HA_URL", "http://localhost:8123").rstrip("/")
+    ha_token = os.environ.get("HA_TOKEN", "")
+
+    async def _fetch_inventory() -> List[dict]:
+        # MCP gives us area + domain + entity_id (resolved against HA's
+        # device registry). It strips `device_class` to keep the agent
+        # payload light, so we hit HA REST /api/states in parallel and
+        # merge full attributes back in.
+        async def _mcp_devices() -> List[dict]:
+            async with streamablehttp_client(mcp_url) as (read, write, _):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    res = await session.call_tool("list_devices", {})
+                    blocks = getattr(res, "content", None) or []
+                    if not blocks:
+                        return []
+                    txt = getattr(blocks[0], "text", None) or "{}"
+                    return _json.loads(txt).get("devices", []) or []
+
+        async def _ha_states() -> Dict[str, dict]:
+            if not ha_token:
+                return {}
+            headers = {"Authorization": f"Bearer {ha_token}"}
+            async with aiohttp.ClientSession(headers=headers) as s:
+                async with s.get(f"{ha_url}/api/states") as r:
+                    r.raise_for_status()
+                    states = await r.json()
+            return {s["entity_id"]: s for s in states}
+
+        devices, states = await asyncio.gather(_mcp_devices(), _ha_states())
+        # Merge full attributes (including device_class) over the
+        # stripped MCP attrs.
+        for d in devices:
+            st = states.get(d.get("entity_id"))
+            if not st:
+                continue
+            full_attrs = (st.get("attributes") or {})
+            d["attributes"] = {**(d.get("attributes") or {}), **full_attrs}
+        return devices
+
+    try:
+        devices = asyncio.run(_fetch_inventory())
+    except Exception as exc:
+        print(
+            f"Could not reach the stack: {exc}\n"
+            f"Is everything running? Try `sandcastle-sim status`.",
+            file=sys.stderr,
+        )
+        return 2
+
+    # Shape the inventory for auto_layout: keep only entities we know
+    # how to place. Skipped entities are listed at the end.
+    inventory: List[dict] = []
+    skipped: List[str] = []
+    for d in devices:
+        layout_type = _floorplan_type(d)
+        if layout_type is None:
+            skipped.append(d.get("entity_id", "?"))
+            continue
+        inventory.append({
+            "entity_id": d["entity_id"],
+            "area": d.get("area"),
+            "type": layout_type,
+        })
+
+    new_devices = fp.auto_layout(
+        inventory, rooms, existing=existing_devices, force=force,
+    )
+
+    new_data = dict(existing)
+    new_data["devices"] = new_devices
+
+    try:
+        fp.save_floorplan(target, new_data)
+    except fp.FloorplanError as exc:
+        print(f"refusing to write invalid floorplan: {exc}", file=sys.stderr)
+        return 2
+
+    placed = len(new_devices)
+    kept = sum(
+        1 for eid, dev in new_devices.items()
+        if eid in existing_devices and not force
+    )
+    print(f"Wrote {target}")
+    print(f"  {placed} devices placed ({kept} kept from existing, "
+          f"{placed - kept} (re-)laid out)")
+    if skipped:
+        print(f"  {len(skipped)} devices skipped (no floor-plan type):")
+        for s in skipped[:10]:
+            print(f"    - {s}")
+        if len(skipped) > 10:
+            print(f"    ... and {len(skipped) - 10} more")
     return 0
 
 
@@ -1345,6 +1570,38 @@ def build_parser() -> argparse.ArgumentParser:
     _add_agent_args(p_chat)
     p_chat.set_defaults(func=cmd_chat)
 
+    p_floorplan = sub.add_parser(
+        "floorplan",
+        help=(
+            "Floor-plan layout helpers. `floorplan auto` re-lays out "
+            "the GUI's device positions from the live HA inventory."
+        ),
+    )
+    p_floorplan_sub = p_floorplan.add_subparsers(dest="floorplan_cmd")
+    p_floorplan_auto = p_floorplan_sub.add_parser(
+        "auto",
+        help=(
+            "Place devices on the floor plan deterministically based on "
+            "device type. Reads inventory from the MCP server. By default "
+            "preserves coordinates for devices already laid out — pass "
+            "--force to re-lay-out everything."
+        ),
+    )
+    p_floorplan_auto.add_argument(
+        "--force", action="store_true",
+        help="Re-place every device, ignoring existing coordinates.",
+    )
+    p_floorplan_auto.add_argument(
+        "--mcp-url", default="http://localhost:8765/mcp/",
+        help="MCP server URL (default: http://localhost:8765/mcp/).",
+    )
+    p_floorplan_auto.add_argument(
+        "--out", default=None,
+        help="Override the floorplan.json output path (default: <workdir>/floorplan.json).",
+    )
+    _add_workdir_arg(p_floorplan_auto)
+    p_floorplan.set_defaults(func=cmd_floorplan)
+
     p_eval = sub.add_parser(
         "eval",
         help=(
@@ -1425,7 +1682,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     known_cmds = {
         "start", "stop", "logs",
         "up", "down", "bootstrap", "reset", "sim", "mcp", "status", "agent", "chat",
-        "eval",
+        "eval", "floorplan",
     }
     if argv and not argv[0].startswith("-") and argv[0] not in known_cmds:
         argv = ["agent", *argv]

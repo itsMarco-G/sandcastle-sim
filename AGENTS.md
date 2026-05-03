@@ -117,8 +117,12 @@ clearly stated reason.
    `ALL_BY_DOMAIN`.
 3. Wire it in `main.py:_build_devices()`.
 4. (Optional) Add a renderer to `data/gui/index.html`'s
-   `updateDevice` dispatcher and an entry in the `DEVICES` map for
-   room placement.
+   `updateDevice` dispatcher; add a placement entry under `devices`
+   in `<workdir>/.sandcastle/floorplan.json` (or run
+   `sandcastle-sim floorplan auto` to place it deterministically
+   once the entity is live in HA).
+   See [`docs/floorplan.md`](docs/floorplan.md) and
+   [`docs/your-home.md`](docs/your-home.md).
 
 ### Adding a new MCP tool
 

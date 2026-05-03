@@ -227,8 +227,14 @@ Browser opens index.html
     actions, suppressed for noisy attribute updates)
 ```
 
-The GUI is a passive display. No user controls. Everything visible
-on screen reflects what the simulator + HA + agent are doing.
+The GUI is mostly a passive display of HA state, but every device
+icon is also clickable for manual onboarding and sanity checks —
+clicking a light toggles it via HA's REST API, sensor pulses fire
+through `/api/demo/trigger` to the simulator, locks/covers/etc. each
+have a small interaction. The agent and the user are two parallel
+writers; HA serializes both. The deliberate non-goal is full
+dashboard parity (scenes, schedules, history) — those belong to HA's
+own UI or to ha-floorplan / Bubble Card etc., not here.
 
 ---
 

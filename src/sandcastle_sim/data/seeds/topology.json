@@ -1,0 +1,169 @@
+{
+  "area_names": {
+    "living_room": "Living Room",
+    "kitchen": "Kitchen",
+    "hallway": "Hallway",
+    "bedroom": "Bedroom",
+    "bedroom_2": "Bedroom 2",
+    "bathroom": "Bathroom"
+  },
+  "devices": {
+    "light": [
+      {
+        "slug": "living_room_main",
+        "area": "living_room",
+        "name": "Living Room Main",
+        "kind": "dimmable"
+      },
+      {
+        "slug": "living_room_accent",
+        "area": "living_room",
+        "name": "Living Room Accent",
+        "kind": "rgb"
+      },
+      {
+        "slug": "kitchen_counter",
+        "area": "kitchen",
+        "name": "Kitchen Counter",
+        "kind": "dimmable"
+      },
+      {
+        "slug": "hallway_ceiling",
+        "area": "hallway",
+        "name": "Hallway Ceiling",
+        "kind": "dimmable"
+      },
+      {
+        "slug": "bedroom_main",
+        "area": "bedroom",
+        "name": "Bedroom Main",
+        "kind": "dimmable"
+      },
+      {
+        "slug": "bedroom_mood",
+        "area": "bedroom",
+        "name": "Bedroom Mood",
+        "kind": "rgb"
+      },
+      {
+        "slug": "bedroom_2_main",
+        "area": "bedroom_2",
+        "name": "Bedroom 2 Main",
+        "kind": "dimmable"
+      }
+    ],
+    "switch": [
+      {
+        "slug": "coffee_machine",
+        "area": "kitchen",
+        "name": "Coffee Machine",
+        "watts_when_on": 800.0
+      }
+    ],
+    "lock": [
+      {
+        "slug": "front_door",
+        "area": "hallway",
+        "name": "Front Door"
+      }
+    ],
+    "cover": [
+      {
+        "slug": "living_room_blind",
+        "area": "living_room",
+        "name": "Living Room Blind"
+      },
+      {
+        "slug": "bedroom_blind",
+        "area": "bedroom",
+        "name": "Bedroom Blind"
+      }
+    ],
+    "climate": [
+      {
+        "slug": "home_thermostat",
+        "area": null,
+        "name": "Home Thermostat"
+      }
+    ],
+    "sensor": [
+      {
+        "slug": "bedroom_temperature",
+        "area": "bedroom",
+        "name": "Bedroom Temperature",
+        "device_class": "temperature",
+        "unit": "\u00b0C",
+        "initial": 21.0
+      },
+      {
+        "slug": "bedroom_2_temperature",
+        "area": "bedroom_2",
+        "name": "Bedroom 2 Temperature",
+        "device_class": "temperature",
+        "unit": "\u00b0C",
+        "initial": 20.5
+      },
+      {
+        "slug": "power_meter",
+        "area": null,
+        "name": "Power Meter",
+        "device_class": "power",
+        "unit": "W",
+        "initial": 0.0
+      },
+      {
+        "slug": "vacuum_current_room",
+        "area": null,
+        "name": "Vacuum Current Room",
+        "unit": null,
+        "initial": "docked"
+      }
+    ],
+    "binary_sensor": [
+      {
+        "slug": "front_door_contact",
+        "area": "hallway",
+        "name": "Front Door Contact",
+        "device_class": "door"
+      },
+      {
+        "slug": "kitchen_window_contact",
+        "area": "kitchen",
+        "name": "Kitchen Window Contact",
+        "device_class": "window"
+      },
+      {
+        "slug": "hallway_motion",
+        "area": "hallway",
+        "name": "Hallway Motion",
+        "device_class": "motion"
+      },
+      {
+        "slug": "living_room_motion",
+        "area": "living_room",
+        "name": "Living Room Motion",
+        "device_class": "motion"
+      },
+      {
+        "slug": "kitchen_leak",
+        "area": "kitchen",
+        "name": "Kitchen Leak",
+        "device_class": "moisture"
+      },
+      {
+        "slug": "hallway_smoke",
+        "area": "hallway",
+        "name": "Hallway Smoke",
+        "device_class": "smoke"
+      }
+    ],
+    "media_player": [],
+    "vacuum": [
+      {
+        "slug": "robot_vacuum",
+        "area": null,
+        "name": "Robot Vacuum"
+      }
+    ]
+  }
+}

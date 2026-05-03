@@ -83,6 +83,8 @@ include = ["sandcastle_sim*"]
     "data/seeds/docker-compose.yml",
     "data/seeds/ha_config/*.yaml",
     "data/seeds/mosquitto/config/*.conf",
+    "data/seeds/topology.json",
+    "data/seeds/floorplan.json",
     "data/evals/*.yaml",
 ]
 

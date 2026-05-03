@@ -156,6 +156,7 @@ _Coming soon._
 - [docs/tool-contract.md](docs/tool-contract.md) : full MCP tool surface
 - [docs/integrating-your-agent.md](docs/integrating-your-agent.md) : connect any MCP-speaking agent
 - [docs/extending-the-simulator.md](docs/extending-the-simulator.md) : add devices, tools, scenes
+- [docs/floorplan.md](docs/floorplan.md) : customise the floor plan (auto-layout + correction vocabulary)
 - [docs/hardware.md](docs/hardware.md) : Mac, Linux, Pi 4/5 sizing notes
 - [docs/adding-matter.md](docs/adding-matter.md) : swap in real Matter hardware
 - [CONTRIBUTING.md](CONTRIBUTING.md) : how to contribute
