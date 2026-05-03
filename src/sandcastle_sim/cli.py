@@ -27,6 +27,7 @@ import argparse
 import itertools
 import os
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -206,6 +207,41 @@ def _port_open(port: int, host: str = "127.0.0.1") -> bool:
         return False
     finally:
         s.close()
+
+
+def _find_port_pid(port: int) -> Optional[int]:
+    """Return the PID listening on port, or None if not found / lsof unavailable."""
+    try:
+        r = subprocess.run(
+            ["lsof", "-t", f"-i:{port}", "-sTCP:LISTEN"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            return int(r.stdout.strip().split()[0])
+    except Exception:
+        pass
+    return None
+
+
+def _evict_port(port: int) -> Optional[int]:
+    """SIGTERM (then SIGKILL) whatever is listening on port. Returns evicted PID."""
+    pid = _find_port_pid(port)
+    if pid is None:
+        return None
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError:
+        return pid
+    deadline = time.monotonic() + 3.0
+    while time.monotonic() < deadline and _port_open(port):
+        time.sleep(0.2)
+    if _port_open(port):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+        time.sleep(0.3)
+    return pid
 
 
 # --------------------------------------------------------------------------- #
@@ -452,6 +488,103 @@ def cmd_bootstrap(args: argparse.Namespace) -> int:
     return subprocess.call(cmd, cwd=str(workdir))
 
 
+# Files inside ha-config/ that hold HA's persistent runtime state. These
+# are what survives `docker compose down -v` (because ha-config is a
+# bind-mount, not a named volume) and what causes the "user already
+# onboarded, no token in .env" wedge that bootstrap can't recover from.
+# Tracked configs (configuration.yaml, scenes.yaml) are preserved.
+_HA_STATE_PATHS = (
+    ".storage", ".cloud", "blueprints", "deps", "tts", "custom_components",
+    ".HA_VERSION", ".ha_run.lock",
+    "home-assistant_v2.db", "home-assistant_v2.db-shm", "home-assistant_v2.db-wal",
+    "home-assistant.log", "home-assistant.log.1", "home-assistant.log.fault",
+    "secrets.yaml", "automations.yaml", "scripts.yaml",
+)
+
+
+def cmd_reset(args: argparse.Namespace) -> int:
+    """Wipe HA's persisted state so the next start is a clean bootstrap.
+
+    The ha-config/ directory is bind-mounted into HA's ``/config`` so
+    users can edit ``scenes.yaml`` directly. Side effect: HA writes its
+    DB, ``.storage``, onboarding state, etc. into the same folder, owned
+    by root (the in-container user). ``docker compose down -v`` only
+    wipes named volumes, so those files survive — and a stale
+    ``.storage`` against a missing ``.env`` token leaves bootstrap
+    permanently wedged.
+
+    This command stops the stack, runs an Alpine one-shot in Docker to
+    delete the root-owned state files (no host sudo required), removes
+    the Mosquitto named volume, and drops ``.env``. Tracked configs
+    (``configuration.yaml``, ``scenes.yaml``) are preserved.
+    """
+    workdir = _resolve_workdir(args.workdir)
+    ha_config = workdir / "ha-config"
+
+    if not ha_config.is_dir():
+        print(f"No ha-config/ at {ha_config} — nothing to reset.")
+        return 0
+
+    if not args.yes:
+        from rich.console import Console
+        Console().print(
+            f"\n[bold yellow]This will wipe HA's persisted state at "
+            f"{ha_config}[/]:\n"
+            "  - admin user, onboarding, auth tokens (.storage)\n"
+            "  - HA database (home-assistant_v2.db)\n"
+            "  - blueprints, deps, tts, custom_components\n"
+            "  - logs and version markers\n"
+            "  - .env in the workdir (so bootstrap mints a fresh token)\n"
+            "  - mosquitto data volume\n\n"
+            "[bold]Tracked configs (configuration.yaml, scenes.yaml) "
+            "are preserved.[/]\n"
+        )
+        try:
+            answer = input("Continue? [y/N] ").strip().lower()
+        except EOFError:
+            answer = ""
+        if answer not in ("y", "yes"):
+            print("Aborted.")
+            return 1
+
+    # 1. Bring everything down first so HA isn't writing while we wipe.
+    print("\nStopping stack ...")
+    subprocess.call(
+        ["docker", "compose", "down", "-v"],
+        cwd=str(workdir),
+    )
+
+    # 2. Wipe HA state via an Alpine one-shot — root inside the container
+    #    can rm root-owned files on the bind mount without host sudo.
+    paths_to_wipe = " ".join(f"/wipe/{p}" for p in _HA_STATE_PATHS)
+    print("Wiping HA persisted state ...")
+    rc = subprocess.call(
+        [
+            "docker", "run", "--rm",
+            "-v", f"{ha_config.resolve()}:/wipe",
+            "alpine:3", "sh", "-c", f"rm -rf {paths_to_wipe}",
+        ],
+        cwd=str(workdir),
+    )
+    if rc != 0:
+        print(
+            f"docker run exited {rc}. ha-config/ state may be partially "
+            "wiped. Re-run `sandcastle-sim reset --yes` once Docker is "
+            "healthy.",
+            file=sys.stderr,
+        )
+        return rc
+
+    # 3. Drop .env so bootstrap regenerates a fresh HA_TOKEN.
+    env_path = workdir / ".env"
+    if env_path.is_file():
+        env_path.unlink()
+        print(f"Removed {env_path}")
+
+    print("\n[ok] HA state wiped. Next: sandcastle-sim start")
+    return 0
+
+
 def cmd_sim(args: argparse.Namespace) -> int:
     """Run the device simulator + floor-plan GUI server (foreground)."""
     workdir = _resolve_workdir(args.workdir)
@@ -579,6 +712,16 @@ def cmd_start(args: argparse.Namespace) -> int:
                 f"already running [dim](PID {existing})[/]"
             )
             continue
+        # Port occupied by a process we've lost track of (e.g. a stale server
+        # that survived a previous reset). Evict it so the fresh component can
+        # bind. Ports 8765/8766 are sandcastle-specific, so this is safe.
+        if _port_open(comp.port):
+            evicted = _evict_port(comp.port)
+            if evicted:
+                Console().print(
+                    f"  [yellow]![/] evicted stale process on "
+                    f":{comp.port} (PID {evicted})"
+                )
         with _Spinner(comp.label) as sp:
             pid = runtime.start_component(workdir, comp, env)
             ok = runtime.wait_for_port("127.0.0.1", comp.port, timeout=15)
@@ -613,18 +756,25 @@ def cmd_stop(args: argparse.Namespace) -> int:
     for comp in runtime.COMPONENTS:
         pid = runtime.status_component(workdir, comp)
         if pid is None:
-            print(f"  • {comp.label}: not running")
-            continue
-        print(f"  • {comp.label}: SIGTERM -> PID {pid}", end="", flush=True)
-        result = runtime.stop_component(
-            workdir, comp, timeout=10.0, progress=True,
-        )
-        if result == "stopped":
-            print(" stopped")
-        elif result == "killed":
-            print(" KILLED (didn't respond to SIGTERM)")
+            print(f"  • {comp.label}: not running", end="", flush=True)
         else:
-            print(f" {result}")
+            print(f"  • {comp.label}: SIGTERM -> PID {pid}", end="", flush=True)
+            result = runtime.stop_component(
+                workdir, comp, timeout=10.0, progress=True,
+            )
+            if result == "stopped":
+                print(" stopped", end="", flush=True)
+            elif result == "killed":
+                print(" KILLED (didn't respond to SIGTERM)", end="", flush=True)
+            else:
+                print(f" {result}", end="", flush=True)
+        # Evict anything still holding the port (orphaned process with a
+        # stale/missing PID file that stop_component couldn't reach).
+        if _port_open(comp.port):
+            evicted = _evict_port(comp.port)
+            if evicted:
+                print(f" (evicted stale PID {evicted} on :{comp.port})", end="")
+        print()
 
     if args.keep_docker:
         print("  • Mosquitto + Home Assistant: kept (--keep-docker)")
@@ -1141,6 +1291,21 @@ def build_parser() -> argparse.ArgumentParser:
     _add_workdir_arg(p_boot)
     p_boot.set_defaults(func=cmd_bootstrap)
 
+    p_reset = sub.add_parser(
+        "reset",
+        help=(
+            "Wipe HA's persisted state (DB, .storage, onboarding, .env) "
+            "so the next start is a clean bootstrap. Tracked configs "
+            "(configuration.yaml, scenes.yaml) are preserved."
+        ),
+    )
+    p_reset.add_argument(
+        "--yes", action="store_true",
+        help="Skip the confirmation prompt.",
+    )
+    _add_workdir_arg(p_reset)
+    p_reset.set_defaults(func=cmd_reset)
+
     p_sim = sub.add_parser(
         "sim", help="Run the device simulator + floor-plan GUI (foreground).",
     )
@@ -1259,7 +1424,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     known_cmds = {
         "start", "stop", "logs",
-        "up", "down", "bootstrap", "sim", "mcp", "status", "agent", "chat",
+        "up", "down", "bootstrap", "reset", "sim", "mcp", "status", "agent", "chat",
         "eval",
     }
     if argv and not argv[0].startswith("-") and argv[0] not in known_cmds:

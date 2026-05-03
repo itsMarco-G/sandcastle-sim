@@ -341,7 +341,9 @@ def _bootstrap(force: bool = False) -> int:
             print(
                 "Onboarding has already created an admin user, but no usable "
                 f"HA_TOKEN was found in {env_path}.\n"
-                "Easiest reset: sandcastle-sim down -v && sandcastle-sim start"
+                "HA's persisted state has drifted out of sync with the .env "
+                "token. Wipe it and start fresh:\n"
+                "  sandcastle-sim reset --yes && sandcastle-sim start"
             )
             return 1
 
