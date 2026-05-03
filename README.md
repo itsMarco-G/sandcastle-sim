@@ -46,19 +46,7 @@ pip install sandcastle-sim
 
 Planning to make code changes? Install editable from a checkout instead (`pip install -e .`). See [CONTRIBUTING.md](CONTRIBUTING.md) for the full dev setup.
 
-## Quickstart
-
-### Start the stack
-
-```sh
-sandcastle-sim start
-```
-
-When the castle banner prints in the terminal, the stack is up. Open `http://localhost:8766` and you should see the floor plan with every device laid out across six rooms. Click any device to flip it on or off, dim a light, or open a blind. That's the simulated home.
-
-### Drive it with natural language
-
-In a separate terminal, pull the model and start Ollama:
+in a **second terminal**, pull the model and start Ollama, this will take a few minutes depending on your connection:
 
 ```sh
 ollama pull gemma4:e4b
@@ -67,8 +55,20 @@ ollama pull gemma4:e4b
 ```sh
 ollama serve
 ```
+Proceed with steps below while the model is downloading and Ollama is starting up.
 
-Then back in your first terminal:
+## Quickstart
+
+In your original terminal, run:
+
+```sh
+sandcastle-sim start
+```
+
+When the castle banner prints in the terminal, the stack is up. Open `http://localhost:8766` and you should see the floor plan. Click any device to turn it on or off, dim a light, or open a blind. That's the simulated home.
+
+### Drive it with natural language
+> **Note:** Only start chat below once Ollama is up and the model is ready from the earlier steps.
 
 ```sh
 sandcastle-sim chat
@@ -82,7 +82,9 @@ set up welcome guest
 
 ![set up welcome guest](docs/welcome-guest.png)
 
-From there, riff off the tool list the chat panel shows.
+You should see the floorplan update from the model's tool call like above.
+
+Congratulations! You're now ready to explore and control your simulated smarthome with your agent 🏰
 
 Run `sandcastle-sim --help` for the full command list.
 
