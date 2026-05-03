@@ -40,39 +40,39 @@ http://localhost:8766
 Click any device — a light toggles, a contact sensor flips, a lock
 clicks. That's the home you're about to customise.
 
-Open your coding agent in the project root. Optional but recommended:
-have it read [`AGENTS.md`](../AGENTS.md) once, so the rest of this
-doc doesn't repeat orientation.
+Open your coding agent in the project root. **First thing to do: ask
+it to read [`AGENTS.md`](../AGENTS.md).** That file contains the
+mechanics — file paths, the MCP URL, the placement vocabulary, the
+restart procedure, the verification protocol — so the prompts below
+can stay focused on *what* you want, not *how* to do it.
+
+> "Read `AGENTS.md` so you have the conventions for this repo,
+> including the section on customising the user's home."
 
 ---
 
 ## Task 1 — Tour your stack
 
-The agent's first job is to know what it's looking at.
-
 **Prompt:**
 
-> Read `AGENTS.md` and skim `docs/floorplan.md`. Then connect to the
-> running MCP server at `http://localhost:8765/mcp/`, call
-> `list_devices`, and give me a short summary: how many devices per
-> room, which agent tools are available, and one or two devices you'd
-> recommend toggling first to verify the agent control path works.
-> Under 200 words.
+> Tour my smart-home stack — what's running, what devices do I have
+> across which rooms, and what's a good first thing to test if I want
+> to confirm the agent control path actually works?
 
 **What you should see:**
 
-The agent reads two files, runs an MCP call, and reports back.
-Something like *"6 rooms, 22 devices, tools include `turn_on` /
-`set_light` / `lock` / `list_devices` / `start_vacuum` …; for a quick
-end-to-end check I'd toggle `light.kitchen_counter` — plain dimmable,
-visually obvious."*
+The agent connects to the MCP server, calls `list_devices`, and
+gives you something like *"6 rooms, 22 devices, tools include
+`turn_on` / `set_light` / `lock` / `list_devices` / `start_vacuum`;
+for a quick end-to-end check I'd toggle `light.kitchen_counter` —
+plain dimmable, visually obvious."*
 
 Try the suggestion in the GUI to confirm the agent is grounded in
 something real, not hallucinating.
 
-**What you've learned:** the agent has direct access to live state
-through the MCP server. Anything it claims about your home, you can
-verify with `list_devices` yourself:
+**What you've learned:** the agent has direct access to live state.
+Anything it claims about your home, you can verify with
+`list_devices` yourself:
 
 ```sh
 .venv/bin/python scripts/smoketest_mcp.py
@@ -82,93 +82,61 @@ verify with `list_devices` yourself:
 
 ## Task 2 — Move a device on the floor plan
 
-The floor plan's layout (rooms + per-device coordinates) lives in a
-single JSON file. Editing it is a config change, not a code change —
-no restart needed.
+The floor plan's layout (rooms + per-device coordinates) lives in
+a single JSON file. Editing it is a config change, not code — no
+restart needed.
 
 **Prompt:**
 
 > Move the kitchen counter light to the south wall of the kitchen.
-> Use the placement vocabulary in `docs/floorplan.md` (south wall =
-> `y` near `room.h - margin`). Edit
-> `<workdir>/.sandcastle/floorplan.json` (your home, created on
-> first `sandcastle-sim start`). Validate by reloading
-> the file with `sandcastle_sim.floorplan.load_floorplan`, and tell me
-> when to refresh the browser.
 
 **What you should see:**
 
-- The agent edits exactly one entry in `floorplan.json`. The
-  kitchen counter light's `y` becomes ~240 (kitchen height is 270).
-- Agent confirms the file still validates.
-- Hard-refresh the browser (**Ctrl+Shift+R** / **Cmd+Shift+R**).
-  The kitchen counter light has moved south.
+- The agent edits exactly one entry in `<workdir>/.sandcastle/floorplan.json`.
+  The kitchen counter light's `y` becomes ~240 (kitchen height is 270).
+- Agent validates the file, then tells you to hard-refresh the
+  browser (**Ctrl+Shift+R** / **Cmd+Shift+R**). The light has
+  moved south.
 
 **Try a free-form follow-up:**
 
-> Now centre the kitchen window contact horizontally, and move the
+> Centre the kitchen window contact horizontally, and move the
 > coffee machine next to where the counter light used to be.
 
-Two more single-line edits. Refresh; both moved.
+Two more single-line edits, one refresh, both moved.
 
-**What you've learned:** floor-plan layout is data. The agent edits
-it without touching any rendering code. The validator catches
-mistakes — try *"move the coffee machine to (-99, -99)"* and the
-agent (or the validator) will refuse with a clear error.
+**What you've learned:** floor-plan layout is data the agent edits
+without touching any rendering code. Vocabulary like "south wall,"
+"swap," "next to" is documented in `AGENTS.md` and `docs/floorplan.md`
+— the agent maps your words to coordinates. The validator catches
+mistakes; try *"move the coffee machine to (-99, -99)"* and the
+agent (or the validator) refuses with a clear error.
 
 ---
 
 ## Task 3 — Add a real device to your home
 
 The bathroom in the bundled home is empty. Let's give it a ceiling
-light. This is the full add-a-device flow:
-
-1. Add a spec to your home's topology in the workdir.
-2. Restart the simulator so MQTT discovery publishes the new entity
-   to HA.
-3. Run `sandcastle-sim floorplan auto` so the new device gets a
-   deterministic position on the floor plan.
-4. Hard-refresh and verify the agent can control it.
-
-Your home — both the floor plan and the simulator's device list —
-lives in `<workdir>/.sandcastle/`, **not** in the package source.
-That's how customisations survive `git pull` and `pip install
---upgrade`. The package's `data/seeds/` directory holds read-only
-defaults; your workdir copy is editable and durable. (See
-[`floorplan.md` § Persistence](floorplan.md#persistence).)
+light.
 
 **Prompt:**
 
-> Add a "Bathroom Main" dimmable ceiling light to my home.
-> Entity_id should be `light.bathroom_main`, area `bathroom`.
->
-> Steps:
-> 1. Read `docs/extending-the-simulator.md` and `docs/floorplan.md`
->    to confirm conventions.
-> 2. Edit `.sandcastle/topology.json` (in the project root). Append
->    one entry to `devices.light`:
->    `{"slug": "bathroom_main", "area": "bathroom", "name": "Bathroom Main", "kind": "dimmable"}`.
-> 3. Restart the foreground processes so the simulator re-publishes
->    MQTT discovery: `sandcastle-sim stop && sandcastle-sim start`.
->    Wait for the stack to come back up; verify with
->    `sandcastle-sim status`.
-> 4. Run `sandcastle-sim floorplan auto`. By default it places only
->    new devices and leaves existing positions untouched, which is
->    what we want here.
-> 5. Confirm HA sees the new entity:
->    `curl -s -H "Authorization: Bearer $HA_TOKEN" http://localhost:8123/api/states/light.bathroom_main`
-> 6. Tell me to hard-refresh, and try toggling the new icon.
+> Add a dimmable ceiling light called "Bathroom Main" to my home.
+> When you're done, tell me how to verify it works — I want to be
+> able to click it on the floor plan and ask the agent to turn it on.
 
 **What you should see:**
 
-- One new entry appended in `.sandcastle/topology.json`.
-- Stack cycles cleanly (~10 seconds).
-- `floorplan auto` reports `1 device placed (existing kept,
-  1 newly laid out)`.
-- HA returns a JSON state for `light.bathroom_main` (state probably
-  `"off"`).
-- After hard-refresh: the bathroom now has a light icon. Click it —
-  it toggles. Click again — it toggles back.
+The agent (following the procedure documented in `AGENTS.md`) will:
+
+- Append one entry to `.sandcastle/topology.json` under `devices.light`.
+- Restart the simulator so HA picks up the new entity via MQTT
+  discovery (`sandcastle-sim stop && sandcastle-sim start`).
+- Run `sandcastle-sim floorplan auto` to place the new icon.
+- Curl HA to confirm the entity exists.
+- Tell you to hard-refresh the browser and try interacting with it.
+
+The whole thing takes ~30 seconds from prompt to clickable icon.
 
 **Verify the agent can control it.** In a separate terminal:
 
