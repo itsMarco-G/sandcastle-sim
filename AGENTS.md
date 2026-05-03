@@ -117,8 +117,12 @@ clearly stated reason.
    `ALL_BY_DOMAIN`.
 3. Wire it in `main.py:_build_devices()`.
 4. (Optional) Add a renderer to `data/gui/index.html`'s
-   `updateDevice` dispatcher and an entry in the `DEVICES` map for
-   room placement.
+   `updateDevice` dispatcher; add a placement entry under `devices`
+   in `<workdir>/.sandcastle/floorplan.json` (or run
+   `sandcastle-sim floorplan auto` to place it deterministically
+   once the entity is live in HA).
+   See [`docs/floorplan.md`](docs/floorplan.md) and
+   [`docs/your-devices.md`](docs/your-devices.md).
 
 ### Adding a new MCP tool
 
@@ -141,6 +145,178 @@ clearly stated reason.
 1. New entry in `ha-config/scenes.yaml`.
 2. Restart HA (`make restart` or `sandcastle-sim down && sandcastle-sim up`).
    The MCP server picks it up automatically.
+
+## Customising the user's home
+
+This is the runbook for when **the user** (not a developer) asks you
+to change something about their home — move a device, add a light,
+swap in a backdrop image, etc. The user-facing walkthrough is
+[`docs/your-devices.md`](docs/your-devices.md); this section is your
+internal mechanics. Their prompts will be terse and natural ("move
+the kitchen light south") — you fill in the procedure.
+
+### Two storage locations, two roles
+
+| Location | Role | Mutate? |
+| --- | --- | --- |
+| `src/sandcastle_sim/data/seeds/` | Bundled demo (read-only). Updated by `git pull` / `pip upgrade`. | **Never.** |
+| `<workdir>/.sandcastle/` | The user's home. Survives package updates. | **Yes — all customisations live here.** |
+
+`<workdir>` is the project root for repo checkouts, or wherever the
+CLI's `--workdir` resolves for pip-installed users. The `floorplan auto`
+command and `seed_workdir()` already write here automatically. If
+you're hand-editing, target `.sandcastle/floorplan.json` /
+`.sandcastle/topology.json` — never the seeds.
+
+### Inspecting the live home
+
+To see what devices the user actually has, query the MCP server:
+
+```python
+import asyncio, json
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
+
+async def main():
+    async with streamablehttp_client("http://localhost:8765/mcp/") as (r, w, _):
+        async with ClientSession(r, w) as s:
+            await s.initialize()
+            res = await s.call_tool("list_devices", {})
+            print(json.loads(res.content[0].text))
+asyncio.run(main())
+```
+
+The MCP server is the source of truth — entity ids, areas,
+protocols. Don't read the floor-plan JSON for inventory; that's
+positioning data, not the live state.
+
+### Move / re-place a device on the floor plan
+
+1. Edit `<workdir>/.sandcastle/floorplan.json`. The placement
+   vocabulary (north/south/east/west/center/swap/etc.) is documented
+   in [`docs/floorplan.md`](docs/floorplan.md) §3 — read it once at
+   session start so you can translate user intent without
+   reinventing the mapping.
+2. Validate by reloading the file:
+   `python -c "from sandcastle_sim.floorplan import load_floorplan, resolve_floorplan_path; load_floorplan(resolve_floorplan_path())"`.
+   The validator catches out-of-room positions and unknown areas.
+3. **Tell the user to hard-refresh** the GUI at
+   `http://localhost:8766` (Ctrl+Shift+R / Cmd+Shift+R). Floor-plan
+   changes are config-only; no restart needed.
+
+### Add a new device *instance* (light, sensor, switch, ...)
+
+The simulator's device list is JSON, not Python. This applies to
+new instances of any class that already exists.
+
+1. Edit `<workdir>/.sandcastle/topology.json`. Append the spec to
+   the right domain list (e.g. `devices.light`). Required fields:
+   `slug`, `area`, `name`. Domain-specific fields per
+   [`docs/extending-the-simulator.md`](docs/extending-the-simulator.md).
+2. Restart the simulator so MQTT discovery republishes:
+   `sandcastle-sim stop && sandcastle-sim start`. Wait for
+   `sandcastle-sim status` to show all components UP (~10s).
+3. Run `sandcastle-sim floorplan auto`. Default mode places only the
+   new entity, leaves existing positions alone.
+4. Verify HA picked it up:
+   `curl -s -H "Authorization: Bearer $HA_TOKEN" http://localhost:8123/api/states/<entity_id>`.
+5. **Tell the user to hard-refresh** the GUI and try interacting.
+
+### Add a new device *class* (a fan, humidifier, etc.)
+
+This is **not** a workdir edit — it requires Python in the package.
+See [`docs/extending-the-simulator.md`](docs/extending-the-simulator.md).
+Direct the user to that doc; this is a developer flow, not a
+customisation flow.
+
+### Swap in a floor-plan backdrop (image or generated SVG)
+
+The user-facing walkthrough is
+[`docs/your-floorplan.md`](docs/your-floorplan.md). Two flavours
+share one mechanism:
+
+- **User-supplied image (Path B).** They drop a PNG/JPG/SVG floor
+  plan into `.sandcastle/images/` and point you at it.
+- **Agent-generated sketch (Path A).** The user describes their
+  home in words; you compose a small SVG (labelled rectangles,
+  no furniture detail), save it to `.sandcastle/images/`, and use
+  it as the backdrop. Reuse the existing room *keys* (`bedroom`,
+  `kitchen`, etc.) even if the user's home has a different layout
+  — only `name` changes.
+
+Procedure for both:
+
+1. **Image location.** The canonical home is
+   `<workdir>/.sandcastle/images/<filename>`. The user typically
+   drops a fresh image into the project directory (project root
+   or a subdirectory they name); your job is to **move** it from
+   there into `<workdir>/.sandcastle/images/` before referencing
+   it. Don't expect the user to know or use that path themselves.
+   For Path A (you generate the SVG yourself), write it directly
+   into the canonical location.
+2. **Read the image.** Use vision to identify room boundaries and the
+   image's pixel dimensions.
+3. **Edit `<workdir>/.sandcastle/floorplan.json`:**
+   - Set `backdrop` to the filename only (no path) — the
+     control server serves files from `images/` at `/images/<name>`.
+   - Set `viewbox` to `[0, 0, width, height]` matching the image.
+   - Reshape `rooms` rectangles to align with the visible rooms.
+   - Update each device's room-local `x`, `y` so they still land
+     inside their (new) room rectangle. The validator rejects
+     out-of-room positions; if the user's image has very different
+     proportions, run `sandcastle-sim floorplan auto --force` to
+     re-place everything from deterministic priors.
+4. **Critical: keep existing room *keys* unchanged.** A key like
+   `bedroom` is what HA's area registry, `topology.json`, and
+   `list_devices` all use. Renaming the key triggers a multi-layer
+   refactor that's out of scope for this flow. The user's preferred
+   display label goes in the room's `name` field — `"name": "Master
+   Bedroom"` is fine while the key stays `"bedroom"`. If their image
+   has rooms the demo doesn't (a study, a balcony), keep using the
+   nearest existing key (`bedroom_2` for a study) and change `name`.
+5. **Tell the user to hard-refresh.** The GUI skips the JS-drawn
+   walls/furniture/tints when `backdrop` is set and renders the
+   image as the floor instead.
+6. **Set up an iteration loop.** Your first pass is a draft. Tell
+   the user: "compare with the image and tell me what's off — I'll
+   nudge specific rooms or devices." Use the standard placement
+   vocabulary from `docs/floorplan.md` §3.
+
+### Always report what you did and how to verify
+
+End every customisation turn with two beats:
+
+1. **What changed.** A short summary naming each file you created
+   or modified, plus where any moved/generated assets ended up.
+   Example: *"Created `.sandcastle/images/my_home.svg`, updated
+   `.sandcastle/floorplan.json` (`backdrop`, `viewbox`, all six
+   room rects)."* Don't make the user grep their filesystem to
+   figure out the new state.
+2. **What to do next.** A clear "verify like this" line:
+
+   - Floor-plan-only edit → "Hard-refresh the browser at
+     `http://localhost:8766` (Ctrl+Shift+R / Cmd+Shift+R) to see
+     the change."
+   - Topology + sim restart → "After `sandcastle-sim status` shows
+     all UP, hard-refresh the browser. Try clicking the new
+     device, or run `sandcastle-sim '<natural-language test>'`."
+   - Validation failure → surface the validator's error verbatim
+     (it's human-readable), explain what triggered it, and propose
+     a corrected edit.
+
+The user should never have to remember to refresh, or guess where
+you saved a file. That's the runbook's job.
+
+### Don'ts
+
+- Don't write to `data/seeds/`. Those are read-only defaults.
+- Don't edit `topology.py` for instance-level changes — it's now a
+  loader, not the source of specs.
+- Don't bulk-rewrite `floorplan.json` from one user instruction.
+  One ask = one or two device edits. If the user wants a wholesale
+  redo, run `sandcastle-sim floorplan auto --force`.
+- Don't infer area assignments by parsing entity_ids. Read the
+  authoritative `area` from `list_devices`.
 
 ## Things to watch for
 

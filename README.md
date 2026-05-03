@@ -143,13 +143,13 @@ The report leads with cases that used to pass and now fail. Cases that got notic
 
 ## Next steps
 
-### Extend the simulator
+Two short coding-agent-driven walkthroughs make the sandbox yours.
+Paste each prompt into Claude Code / Cursor / Codex / Copilot in
+the project root.
 
-Add devices, tools, and scenes to make the sandbox match your target home. See [docs/extending-the-simulator.md](docs/extending-the-simulator.md).
-
-### Connect cloud models
-
-_Coming soon._
+- [docs/your-devices.md](docs/your-devices.md) — tour the stack, move devices, add new ones
+- [docs/your-floorplan.md](docs/your-floorplan.md) — replace the blueprint with your real home (image or agent-sketched)
+- Connect cloud models — _coming soon_
 
 ## Read more
 
@@ -157,7 +157,10 @@ _Coming soon._
 - [docs/architecture.md](docs/architecture.md) : what runs where and why
 - [docs/tool-contract.md](docs/tool-contract.md) : full MCP tool surface
 - [docs/integrating-your-agent.md](docs/integrating-your-agent.md) : connect any MCP-speaking agent
-- [docs/extending-the-simulator.md](docs/extending-the-simulator.md) : add devices, tools, scenes
+- [docs/your-devices.md](docs/your-devices.md) : customise the devices in your home (walkthrough)
+- [docs/your-floorplan.md](docs/your-floorplan.md) : customise the floor plan with a sketch or image (walkthrough)
+- [docs/floorplan.md](docs/floorplan.md) : floor-plan schema, vocabulary, persistence reference
+- [docs/extending-the-simulator.md](docs/extending-the-simulator.md) : add new device classes, MCP tools, scenes (developer flow)
 - [docs/hardware.md](docs/hardware.md) : Mac, Linux, Pi 4/5 sizing notes
 - [docs/adding-matter.md](docs/adding-matter.md) : swap in real Matter hardware
 - [CONTRIBUTING.md](CONTRIBUTING.md) : how to contribute

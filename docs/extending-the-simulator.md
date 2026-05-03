@@ -9,6 +9,13 @@ If you're using a coding assistant (Claude Code, Cursor, etc.),
 read this with [`AGENTS.md`](../AGENTS.md) — together they give the
 assistant enough context to make these edits with minimal hand-holding.
 
+> **Adding a *new instance* of an existing device class** (another
+> light, another motion sensor) doesn't belong here — that's a
+> JSON edit to your workdir's `topology.json`, no Python required.
+> See [`your-devices.md`](your-devices.md). This doc covers adding new
+> device *classes* (a fan, a humidifier, a media player), which
+> requires Python code inside the package.
+
 ---
 
 ## Add a new device type to the simulator
@@ -78,20 +85,39 @@ implement `discovery_extras()` (the discovery payload's
 domain-specific fields) and `handle_command()` (react to MQTT
 messages on `command_topic`).
 
-### 3. Topology entry
+### 3. Wire the domain into the topology loader
 
-In `src/sandcastle_sim/simulator/topology.py`:
+The simulator's topology lives as JSON. The *bundled* topology
+(``data/seeds/topology.json``) and any user override
+(``<workdir>/.sandcastle/topology.json``) share the same schema.
+For a brand-new domain like `fan`, two small touches:
+
+**a. Expose a `FANS` constant from `topology.py`.** Add one line
+alongside the existing `LIGHTS`, `SWITCHES`, … so callers (the
+simulator's `main.py`) can iterate it:
 
 ```python
-FANS: list[DeviceSpec] = [
-    {"slug": "bedroom_fan", "area": "bedroom", "name": "Bedroom Fan"},
-]
-
+FANS: list[DeviceSpec] = list(_DEVICES.get("fan", []))
 ALL_BY_DOMAIN["fan"] = FANS
+```
+
+**b. Add a default fan to the bundled seed** so the demo home picks
+up an example. Edit `data/seeds/topology.json`, append a `"fan"`
+key under `devices`:
+
+```json
+"fan": [
+  {"slug": "bedroom_fan", "area": "bedroom", "name": "Bedroom Fan"}
+]
 ```
 
 The `slug` becomes the entity_id slug after slugification of `name`
 (see `light.bedroom_main` → `Bedroom Main` for the pattern).
+
+> **Note:** users who *just* want to drop a fan into their existing
+> home (without modifying the package's seed) edit
+> `<workdir>/.sandcastle/topology.json`. The package edit is for
+> shipping the new class as part of the bundled demo.
 
 ### 4. Wire it in `main.py`
 
@@ -106,11 +132,25 @@ for spec in FANS:
 
 ### 5. (Optional) Floor-plan rendering
 
-In `gui/index.html`:
+Two pieces — *placement* (data) and *appearance* (code):
 
-- Add an entry to the `DEVICES` map with `area`, `type: "fan"`,
-  `x`, `y`.
-- Add a renderer in `updateDevice`'s dispatch (`if (t === "fan") renderFanBody(ent, state)`).
+**Placement.** Edit your workdir's
+`<workdir>/.sandcastle/floorplan.json` and add an entry under `devices`:
+
+```json
+"fan.bedroom_fan": { "area": "bedroom", "type": "fan", "x": 200, "y": 120 }
+```
+
+`x`/`y` are room-local pixel coordinates; the validator rejects
+out-of-room positions. Or skip the manual edit and run
+`sandcastle-sim floorplan auto` once the entity is live in HA — it
+will be placed by type with deterministic priors. See
+[`docs/floorplan.md`](floorplan.md).
+
+**Appearance.** In `src/sandcastle_sim/data/gui/index.html`:
+
+- Add a renderer in `updateDevice`'s dispatch
+  (`if (t === "fan") renderFanBody(ent, state)`).
 - Add a `renderFanBody` function that draws a fan icon based on
   state/percentage.
 

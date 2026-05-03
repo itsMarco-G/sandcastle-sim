@@ -13,6 +13,7 @@ Endpoints:
     GET  /                   -> gui/index.html
     GET  /static/<file>      -> gui/<file> (CSS/JS if we ever split out)
     GET  /api/config         -> {"ha_url": ..., "ha_token": ...}
+    GET  /api/floorplan      -> floor-plan rooms + device positions JSON
     POST /api/demo/trigger   -> {entity_id, action} -> publishes MQTT
     GET  /api/health         -> {"ok": true}
 
@@ -150,6 +151,31 @@ def _build_app(devices: List[Device]) -> web.Application:
             {"error": f"unknown action: {action}"}, status=400,
         )
 
+    async def floorplan(_request: web.Request) -> web.Response:
+        # The GUI fetches this at startup to learn rooms + device
+        # positions. Source of truth is the workdir copy if present,
+        # falling back to the bundled package seed. Validated on every
+        # read; bad JSON surfaces as a 500 rather than letting the GUI
+        # crash on undefined fields.
+        from ..floorplan import (
+            load_floorplan, resolve_floorplan_path, FloorplanError,
+        )
+
+        path = resolve_floorplan_path()
+        try:
+            data = load_floorplan(path)
+        except FileNotFoundError:
+            return web.json_response(
+                {"error": f"floorplan.json missing at {path}"},
+                status=500,
+            )
+        except FloorplanError as exc:
+            return web.json_response(
+                {"error": f"floorplan.json invalid: {exc}"},
+                status=500,
+            )
+        return web.json_response(data)
+
     async def health(_request: web.Request) -> web.Response:
         return web.json_response({"ok": True, "devices": len(devices)})
 
@@ -221,12 +247,20 @@ def _build_app(devices: List[Device]) -> web.Application:
     app = web.Application()
     app.router.add_get("/", index)
     app.router.add_get("/api/config", config)
+    app.router.add_get("/api/floorplan", floorplan)
     app.router.add_post("/api/demo/trigger", demo_trigger)
     app.router.add_get("/api/health", health)
     app.router.add_get("/api/ha/websocket", ha_websocket_proxy)
     # Static fallback for any other gui/* file (CSS/JS if we split out).
     if GUI_DIR.is_dir():
         app.router.add_static("/static/", GUI_DIR, show_index=False)
+    # User-supplied backdrop images live in <workdir>/images/. Mounted
+    # at /images/ so floorplan.json's `backdrop` field is just a
+    # filename — no path traversal, no leaking the workdir layout.
+    from ..floorplan import resolve_images_dir
+    images = resolve_images_dir()
+    if images is not None:
+        app.router.add_static("/images/", images, show_index=False)
     return app
 
 

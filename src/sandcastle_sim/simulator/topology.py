@@ -1,34 +1,54 @@
-"""Static device topology for the demo.
+"""Static device topology for the simulator.
 
-One source of truth for which devices exist, where they live, and
-their initial state. Each entry maps cleanly onto the entity_id
-convention from `docs/tool-contract.md`:
+Source of truth is JSON. The active file is, in order:
 
-    {domain}.{slug}     e.g. light.living_room_main
+1. ``$SANDCASTLE_WORKDIR/topology.json`` — the user's home, edited by
+   them or by their coding agent. Survives ``git pull`` and
+   ``pip install --upgrade`` because it lives outside the package.
+2. ``sandcastle_sim/data/seeds/topology.json`` — the bundled demo (the
+   six-room apartment with 22 simulated devices). Read-only from the
+   user's perspective; updated by package upgrades.
 
-Areas use the snake_case keys from the contract (`living_room`,
-`kitchen`, ...). Their human-readable names — what HA's MQTT
-discovery `suggested_area` field expects — are in `AREA_NAMES`.
+Module exposes the same constants the rest of the simulator imports
+(``AREA_NAMES``, ``LIGHTS``, ``SWITCHES``, …) so callers don't need
+to change. Loading happens at import time; the simulator subprocess
+is started by the CLI after ``SANDCASTLE_WORKDIR`` is set, so the
+workdir override is in effect by the time anything imports this.
 
-Total: 22 devices across 6 areas.
+The JSON shape:
+
+    {
+      "area_names": { "kitchen": "Kitchen", ... },
+      "devices": {
+        "light":         [ {slug, area, name, kind, ...}, ... ],
+        "switch":        [ ... ],
+        "lock":          [ ... ],
+        "cover":         [ ... ],
+        "climate":       [ ... ],
+        "sensor":        [ ... ],
+        "binary_sensor": [ ... ],
+        "media_player":  [ ... ],
+        "vacuum":        [ ... ]
+      }
+    }
+
+Each spec maps cleanly onto entity_id `{domain}.{slug}` per the
+contract in `docs/tool-contract.md`. Domain-specific extras
+(``kind``, ``device_class``, ``watts_when_on``, …) live in the spec
+dict and are picked up by the corresponding Device subclass.
 """
 
 from __future__ import annotations
 
+import json
+import logging
+import os
+from importlib import resources
+from pathlib import Path
 from typing import Optional, TypedDict
 
 
-# Slug -> friendly name. The friendly names match the area registry
-# created by scripts/bootstrap_ha.py so HA's MQTT-discovery
-# suggested_area lookup resolves correctly.
-AREA_NAMES = {
-    "living_room": "Living Room",
-    "kitchen": "Kitchen",
-    "hallway": "Hallway",
-    "bedroom": "Bedroom",
-    "bedroom_2": "Bedroom 2",
-    "bathroom": "Bathroom",
-}
+log = logging.getLogger(__name__)
 
 
 class DeviceSpec(TypedDict, total=False):
@@ -44,94 +64,57 @@ class DeviceSpec(TypedDict, total=False):
     watts_when_on: float
 
 
-# Lights: 4 dimmable + 2 RGB, mixed across rooms (per brief).
-#
-# `name` is the device.name that HA slugifies to derive the
-# entity_id. We pick names so slugify(name) matches `slug`. Friendly
-# name in HA = the same string.
-LIGHTS: list[DeviceSpec] = [
-    {"slug": "living_room_main",   "area": "living_room", "name": "Living Room Main",   "kind": "dimmable"},
-    {"slug": "living_room_accent", "area": "living_room", "name": "Living Room Accent", "kind": "rgb"},
-    {"slug": "kitchen_counter",    "area": "kitchen",     "name": "Kitchen Counter",    "kind": "dimmable"},
-    {"slug": "hallway_ceiling",    "area": "hallway",     "name": "Hallway Ceiling",    "kind": "dimmable"},
-    {"slug": "bedroom_main",       "area": "bedroom",     "name": "Bedroom Main",       "kind": "dimmable"},
-    {"slug": "bedroom_mood",       "area": "bedroom",     "name": "Bedroom Mood",       "kind": "rgb"},
-    {"slug": "bedroom_2_main",     "area": "bedroom_2",   "name": "Bedroom 2 Main",     "kind": "dimmable"},
-]
+def _load() -> dict:
+    """Resolve workdir-or-package and parse the topology JSON.
 
-# Smart plug — coffee machine. 800 W is roughly a domestic espresso
-# machine when actively pulling a shot. Brief says "with simulated
-# wattage" — the power meter sums this when the plug is on.
-SWITCHES: list[DeviceSpec] = [
-    {"slug": "coffee_machine", "area": "kitchen", "name": "Coffee Machine", "watts_when_on": 800.0},
-]
+    Looks for ``$SANDCASTLE_WORKDIR/.sandcastle/topology.json`` first
+    so the demo's bundled seed is never written back to. Falls back
+    to the package seed if the workdir copy is missing.
+    """
+    workdir = os.environ.get("SANDCASTLE_WORKDIR")
+    if workdir:
+        wd_path = Path(workdir) / ".sandcastle" / "topology.json"
+        if wd_path.is_file():
+            with open(wd_path, "r", encoding="utf-8") as f:
+                return json.load(f)
 
-LOCKS: list[DeviceSpec] = [
-    {"slug": "front_door", "area": "hallway", "name": "Front Door"},
-]
+    seed = resources.files("sandcastle_sim").joinpath(
+        "data", "seeds", "topology.json"
+    )
+    return json.loads(seed.read_text(encoding="utf-8"))
 
-# Blinds. 0=closed, 100=open per the contract.
-COVERS: list[DeviceSpec] = [
-    {"slug": "living_room_blind", "area": "living_room", "name": "Living Room Blind"},
-    {"slug": "bedroom_blind",     "area": "bedroom",     "name": "Bedroom Blind"},
-]
 
-# Whole-home thermostat. Slug is `home_thermostat`, friendly name
-# "Home Thermostat" — clearer for the GUI than just "Home".
-# Contract entity_id: climate.home_thermostat.
-CLIMATES: list[DeviceSpec] = [
-    {"slug": "home_thermostat", "area": None, "name": "Home Thermostat"},
-]
+_DATA = _load()
 
-# Numeric sensors. Temperature in two bedrooms (drift in milestone 7),
-# whole-home power meter (sum of active devices, also milestone 7).
-SENSORS: list[DeviceSpec] = [
-    {"slug": "bedroom_temperature",   "area": "bedroom",   "name": "Bedroom Temperature",   "device_class": "temperature", "unit": "°C", "initial": 21.0},
-    {"slug": "bedroom_2_temperature", "area": "bedroom_2", "name": "Bedroom 2 Temperature", "device_class": "temperature", "unit": "°C", "initial": 20.5},
-    {"slug": "power_meter",           "area": None,        "name": "Power Meter",           "device_class": "power",       "unit": "W",  "initial": 0.0},
-    # Vacuum's current_room can't ride on the vacuum entity (HA's
-    # mqtt.vacuum integration drops non-standard attributes), so we
-    # surface it as a stand-alone sensor the GUI / tools can read.
-    {"slug": "vacuum_current_room",   "area": None,        "name": "Vacuum Current Room",                                "unit": None, "initial": "docked"},
-]
+# Slug -> friendly name. The friendly names match the area registry
+# created by the bootstrap script so HA's MQTT-discovery
+# suggested_area lookup resolves correctly.
+AREA_NAMES: dict[str, str] = dict(_DATA.get("area_names") or {})
 
-# Binary on/off sensors. device_class drives the icon HA picks.
-BINARY_SENSORS: list[DeviceSpec] = [
-    {"slug": "front_door_contact",     "area": "hallway",     "name": "Front Door Contact",     "device_class": "door"},
-    {"slug": "kitchen_window_contact", "area": "kitchen",     "name": "Kitchen Window Contact", "device_class": "window"},
-    {"slug": "hallway_motion",         "area": "hallway",     "name": "Hallway Motion",         "device_class": "motion"},
-    {"slug": "living_room_motion",     "area": "living_room", "name": "Living Room Motion",     "device_class": "motion"},
-    {"slug": "kitchen_leak",           "area": "kitchen",     "name": "Kitchen Leak",           "device_class": "moisture"},
-    {"slug": "hallway_smoke",          "area": "hallway",     "name": "Hallway Smoke",          "device_class": "smoke"},
-]
+_DEVICES = _DATA.get("devices") or {}
 
-# Media player is deferred — HA's MQTT integration doesn't support
-# the media_player domain, and modelling a speaker as switch+number
-# would muddy the tool contract. See docs/tool-contract.md §4
-# ("media_control" deferred to v0.2).
-MEDIA_PLAYERS: list[DeviceSpec] = []
-
-# Robot vacuum — dock/start/stop, with current_room attribute.
-# Whole-home, so area is None.
-VACUUMS: list[DeviceSpec] = [
-    # Slug is `robot_vacuum` (matches slugify("Robot Vacuum")) so
-    # entity_id = vacuum.robot_vacuum. Reserved name "robot" alone
-    # would also work but reads less clearly in the GUI.
-    {"slug": "robot_vacuum", "area": None, "name": "Robot Vacuum"},
-]
+LIGHTS:         list[DeviceSpec] = list(_DEVICES.get("light",         []))
+SWITCHES:       list[DeviceSpec] = list(_DEVICES.get("switch",        []))
+LOCKS:          list[DeviceSpec] = list(_DEVICES.get("lock",          []))
+COVERS:         list[DeviceSpec] = list(_DEVICES.get("cover",         []))
+CLIMATES:       list[DeviceSpec] = list(_DEVICES.get("climate",       []))
+SENSORS:        list[DeviceSpec] = list(_DEVICES.get("sensor",        []))
+BINARY_SENSORS: list[DeviceSpec] = list(_DEVICES.get("binary_sensor", []))
+MEDIA_PLAYERS:  list[DeviceSpec] = list(_DEVICES.get("media_player",  []))
+VACUUMS:        list[DeviceSpec] = list(_DEVICES.get("vacuum",        []))
 
 
 # Iteration helper: every (domain, spec) pair across the topology.
 ALL_BY_DOMAIN = {
-    "light": LIGHTS,
-    "switch": SWITCHES,
-    "lock": LOCKS,
-    "cover": COVERS,
-    "climate": CLIMATES,
-    "sensor": SENSORS,
+    "light":         LIGHTS,
+    "switch":        SWITCHES,
+    "lock":          LOCKS,
+    "cover":         COVERS,
+    "climate":       CLIMATES,
+    "sensor":        SENSORS,
     "binary_sensor": BINARY_SENSORS,
-    "media_player": MEDIA_PLAYERS,
-    "vacuum": VACUUMS,
+    "media_player":  MEDIA_PLAYERS,
+    "vacuum":        VACUUMS,
 }
 
 

@@ -143,19 +143,33 @@ identically. **No code in `tools/smart_home_mcp/`,
 
 ## 6. Adding the GUI position (one-time)
 
-The floor plan's `DEVICES` table in `gui/index.html` is keyed by
-entity_id. To position the new Matter device on the floor plan, add
-one entry like:
+Two ways:
 
-```js
-"light.eve_energy_strip_42": {
-  area: "living_room", type: "light", x: 100, y: 240
-},
+**Easiest — run the auto-layout.** With the device live in HA:
+
+```bash
+sandcastle-sim floorplan auto
 ```
 
-(The `x` / `y` are room-local pixels — see the existing entries for
-ranges. The light type renderer handles RGB / dimmable / on/off
-automatically based on `attributes.supported_color_modes`.)
+The deterministic layout places the new device based on its type
+(light → spread along the upper third; sensor → near a wall;
+contact → bottom edge; etc.) without touching anything already in the
+file. See [`docs/floorplan.md`](floorplan.md) for the full vocabulary
+and how to nudge a placement afterwards.
+
+**Manual.** Edit `<workdir>/.sandcastle/floorplan.json` (your home;
+created on first `sandcastle-sim start` from the bundled default)
+and add one entry under `devices`:
+
+```json
+"light.eve_energy_strip_42": {
+  "area": "living_room", "type": "light", "x": 100, "y": 240
+}
+```
+
+(`x` / `y` are room-local pixels — see existing entries for ranges.
+The light renderer handles RGB / dimmable / on-off automatically based
+on `attributes.supported_color_modes`.)
 
 ## Troubleshooting
 
