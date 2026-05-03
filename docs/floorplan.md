@@ -189,7 +189,7 @@ demo is, by construction, indelible. Your home is, by construction,
 durable.
 
 (Same model applies to `topology.json` — see
-[`your-home.md`](your-home.md) for adding device instances.)
+[`your-devices.md`](your-devices.md) for adding device instances.)
 
 ## 5. Bring your own home (the backdrop image)
 

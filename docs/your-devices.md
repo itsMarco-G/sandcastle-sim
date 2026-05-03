@@ -1,9 +1,14 @@
-# Customise your home
+# Customise your devices
 
 When `sandcastle-sim start` succeeds you've got a copy of *someone
 else's* apartment running — six rooms, twenty-two simulated devices,
 a stylised blueprint floor plan. This walkthrough is how you make
-it yours.
+the *devices* yours: tour what's there, move things around, and add
+your own.
+
+For customising the floor plan itself (rooms, layout, swapping in
+an image of your real home), see
+[`your-floorplan.md`](your-floorplan.md).
 
 The pattern is "**ask your coding agent, verify in the browser**":
 each task below is a prompt you paste into Claude Code / Cursor /
@@ -179,6 +184,10 @@ From here:
   `quick.yaml`. Add a sixth case that uses your new bathroom light:
   saves you from regressions when you change the agent's prompts or
   models.
+- **Use your real floor plan as the GUI background.**
+  [`your-floorplan.md`](your-floorplan.md) walks through swapping
+  in an image of your actual home. Same agent-driven pattern, one
+  task, ~10 minutes.
 - **Plug in a real device.** [`adding-matter.md`](adding-matter.md)
   is the runbook. The `floorplan auto` flow you just used places it
   for you once HA has commissioned it.

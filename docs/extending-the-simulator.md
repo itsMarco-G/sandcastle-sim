@@ -12,7 +12,7 @@ assistant enough context to make these edits with minimal hand-holding.
 > **Adding a *new instance* of an existing device class** (another
 > light, another motion sensor) doesn't belong here — that's a
 > JSON edit to your workdir's `topology.json`, no Python required.
-> See [`your-home.md`](your-home.md). This doc covers adding new
+> See [`your-devices.md`](your-devices.md). This doc covers adding new
 > device *classes* (a fan, a humidifier, a media player), which
 > requires Python code inside the package.
 

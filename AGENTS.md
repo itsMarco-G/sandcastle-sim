@@ -122,7 +122,7 @@ clearly stated reason.
    `sandcastle-sim floorplan auto` to place it deterministically
    once the entity is live in HA).
    See [`docs/floorplan.md`](docs/floorplan.md) and
-   [`docs/your-home.md`](docs/your-home.md).
+   [`docs/your-devices.md`](docs/your-devices.md).
 
 ### Adding a new MCP tool
 
@@ -151,7 +151,7 @@ clearly stated reason.
 This is the runbook for when **the user** (not a developer) asks you
 to change something about their home — move a device, add a light,
 swap in a backdrop image, etc. The user-facing walkthrough is
-[`docs/your-home.md`](docs/your-home.md); this section is your
+[`docs/your-devices.md`](docs/your-devices.md); this section is your
 internal mechanics. Their prompts will be terse and natural ("move
 the kitchen light south") — you fill in the procedure.
 
@@ -229,17 +229,53 @@ See [`docs/extending-the-simulator.md`](docs/extending-the-simulator.md).
 Direct the user to that doc; this is a developer flow, not a
 customisation flow.
 
-### Swap in a backdrop image of the user's real home
+### Swap in a floor-plan backdrop (image or generated SVG)
 
-1. Save the image to `<workdir>/.sandcastle/images/<filename>`.
-2. Edit `<workdir>/.sandcastle/floorplan.json`:
-   - Set `backdrop` to the filename (string).
-   - Update `viewbox` to match the image's pixel dimensions
-     `[0, 0, width, height]`.
-   - Adjust `rooms` rectangles to align with the visible rooms in
-     the image.
-3. **Tell the user to hard-refresh.** The GUI will skip the JS-drawn
-   walls/furniture and render the image as the floor.
+The user-facing walkthrough is
+[`docs/your-floorplan.md`](docs/your-floorplan.md). Two flavours
+share one mechanism:
+
+- **User-supplied image (Path B).** They drop a PNG/JPG/SVG floor
+  plan into `.sandcastle/images/` and point you at it.
+- **Agent-generated sketch (Path A).** The user describes their
+  home in words; you compose a small SVG (labelled rectangles,
+  no furniture detail), save it to `.sandcastle/images/`, and use
+  it as the backdrop. Reuse the existing room *keys* (`bedroom`,
+  `kitchen`, etc.) even if the user's home has a different layout
+  — only `name` changes.
+
+Procedure for both:
+
+1. **Image location.** It lives at
+   `<workdir>/.sandcastle/images/<filename>`. If the user has dropped
+   it elsewhere (e.g., the project root), copy it there first.
+2. **Read the image.** Use vision to identify room boundaries and the
+   image's pixel dimensions.
+3. **Edit `<workdir>/.sandcastle/floorplan.json`:**
+   - Set `backdrop` to the filename only (no path) — the
+     control server serves files from `images/` at `/images/<name>`.
+   - Set `viewbox` to `[0, 0, width, height]` matching the image.
+   - Reshape `rooms` rectangles to align with the visible rooms.
+   - Update each device's room-local `x`, `y` so they still land
+     inside their (new) room rectangle. The validator rejects
+     out-of-room positions; if the user's image has very different
+     proportions, run `sandcastle-sim floorplan auto --force` to
+     re-place everything from deterministic priors.
+4. **Critical: keep existing room *keys* unchanged.** A key like
+   `bedroom` is what HA's area registry, `topology.json`, and
+   `list_devices` all use. Renaming the key triggers a multi-layer
+   refactor that's out of scope for this flow. The user's preferred
+   display label goes in the room's `name` field — `"name": "Master
+   Bedroom"` is fine while the key stays `"bedroom"`. If their image
+   has rooms the demo doesn't (a study, a balcony), keep using the
+   nearest existing key (`bedroom_2` for a study) and change `name`.
+5. **Tell the user to hard-refresh.** The GUI skips the JS-drawn
+   walls/furniture/tints when `backdrop` is set and renders the
+   image as the floor instead.
+6. **Set up an iteration loop.** Your first pass is a draft. Tell
+   the user: "compare with the image and tell me what's off — I'll
+   nudge specific rooms or devices." Use the standard placement
+   vocabulary from `docs/floorplan.md` §3.
 
 ### Always tell the user when and how to verify
 
