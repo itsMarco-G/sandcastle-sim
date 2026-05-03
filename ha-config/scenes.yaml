@@ -9,6 +9,26 @@
 # the friendly label the agent reads in list_devices output.
 # `entities` is a flat dict of entity_id -> state/attribute payload.
 
+- id: welcome_guest
+  name: Welcome Guest
+  icon: mdi:account-group
+  entities:
+    light.hallway_ceiling:
+      state: on
+      brightness: 220
+    light.kitchen_counter:
+      state: on
+      brightness: 220
+    light.living_room_main:
+      state: on
+      brightness: 220
+    light.bedroom_main:
+      state: on
+      brightness: 220
+    light.bedroom_2_main:
+      state: on
+      brightness: 220
+
 - id: movie_night
   name: Movie Night
   icon: mdi:movie

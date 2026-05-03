@@ -205,7 +205,7 @@ def _make_result(
 def test_save_then_load_round_trip(tmp_path: Path):
     path = tmp_path / "baseline.json"
     save_run([_make_result("a"), _make_result("b", passed=False)], path)
-    saved_at, results = load_run(path)
+    saved_at, _warmup, results = load_run(path)
     assert saved_at is not None
     assert {r["name"] for r in results} == {"a", "b"}
     assert next(r for r in results if r["name"] == "a")["passed"] is True
@@ -213,7 +213,7 @@ def test_save_then_load_round_trip(tmp_path: Path):
 
 
 def test_load_missing_baseline_returns_empty(tmp_path: Path):
-    saved_at, results = load_run(tmp_path / "nope.json")
+    saved_at, _warmup, results = load_run(tmp_path / "nope.json")
     assert saved_at is None
     assert results == []
 
@@ -222,7 +222,7 @@ def test_diff_detects_regression(tmp_path: Path):
     """A case that was passing and is now failing must be flagged."""
     baseline_path = tmp_path / "b.json"
     save_run([_make_result("light_off", passed=True, elapsed=3.0)], baseline_path)
-    _, baseline = load_run(baseline_path)
+    _, _w, baseline = load_run(baseline_path)
 
     current = [_make_result("light_off", passed=False, elapsed=4.0,
                              failures=["expected turn_off, got turn_on"])]
@@ -235,7 +235,7 @@ def test_diff_detects_regression(tmp_path: Path):
 def test_diff_detects_progression(tmp_path: Path):
     baseline_path = tmp_path / "b.json"
     save_run([_make_result("foo", passed=False)], baseline_path)
-    _, baseline = load_run(baseline_path)
+    _, _w, baseline = load_run(baseline_path)
 
     current = [_make_result("foo", passed=True)]
     entries = diff_runs(baseline, current)
@@ -247,7 +247,7 @@ def test_diff_unchanged_within_latency_threshold(tmp_path: Path):
     """Small timing wobbles should NOT show as regressions."""
     baseline_path = tmp_path / "b.json"
     save_run([_make_result("x", passed=True, elapsed=3.0)], baseline_path)
-    _, baseline = load_run(baseline_path)
+    _, _w, baseline = load_run(baseline_path)
 
     current = [_make_result("x", passed=True, elapsed=3.2)]  # +6%
     entries = diff_runs(baseline, current)
@@ -259,7 +259,7 @@ def test_diff_flags_significant_latency_regression(tmp_path: Path):
     """Still passing but >20% AND >1s slower → latency regression."""
     baseline_path = tmp_path / "b.json"
     save_run([_make_result("x", passed=True, elapsed=3.0)], baseline_path)
-    _, baseline = load_run(baseline_path)
+    _, _w, baseline = load_run(baseline_path)
 
     current = [_make_result("x", passed=True, elapsed=5.0)]  # +66%, +2s
     entries = diff_runs(baseline, current)
@@ -270,7 +270,7 @@ def test_diff_flags_significant_latency_regression(tmp_path: Path):
 def test_diff_handles_new_and_removed_cases(tmp_path: Path):
     baseline_path = tmp_path / "b.json"
     save_run([_make_result("kept"), _make_result("dropped")], baseline_path)
-    _, baseline = load_run(baseline_path)
+    _, _w, baseline = load_run(baseline_path)
 
     current = [_make_result("kept"), _make_result("added")]
     entries = diff_runs(baseline, current)

@@ -29,6 +29,7 @@ import os
 from pathlib import Path
 from typing import Dict, List, Optional
 
+import aiohttp
 from aiohttp import web
 
 from .base import Device
@@ -152,11 +153,77 @@ def _build_app(devices: List[Device]) -> web.Application:
     async def health(_request: web.Request) -> web.Response:
         return web.json_response({"ok": True, "devices": len(devices)})
 
+    async def ha_websocket_proxy(request: web.Request) -> web.WebSocketResponse:
+        """Pipe WebSocket frames between the floor-plan GUI and HA.
+
+        The GUI used to connect directly to HA's WebSocket at the URL
+        returned by /api/config (which is `localhost:8123` from the
+        kit's perspective). That works for a same-machine install but
+        breaks when the GUI is loaded through SSH or VS Code port
+        forwarding from a different host: ``localhost`` in the browser
+        then refers to the user's own machine, and HA's port may be
+        remapped or not forwarded at all.
+
+        Proxying through the control server's own port (the one the
+        GUI loaded from) means the GUI can use a same-origin
+        WebSocket URL that always resolves correctly regardless of
+        how the user reached the page.
+
+        Implementation is a transparent passthrough — frames are
+        forwarded both ways unchanged, including the auth handshake.
+        """
+        ha_url = os.environ.get("HA_URL", "http://localhost:8123")
+        ws_url = ha_url.rstrip("/").replace("https://", "wss://").replace("http://", "ws://")
+        ws_url += "/api/websocket"
+
+        client_ws = web.WebSocketResponse()
+        await client_ws.prepare(request)
+        log.info("HA WS proxy: client connected, dialing %s", ws_url)
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.ws_connect(ws_url) as ha_ws:
+                    async def client_to_ha() -> None:
+                        async for msg in client_ws:
+                            if msg.type == aiohttp.WSMsgType.TEXT:
+                                await ha_ws.send_str(msg.data)
+                            elif msg.type in (
+                                aiohttp.WSMsgType.CLOSE,
+                                aiohttp.WSMsgType.CLOSING,
+                                aiohttp.WSMsgType.CLOSED,
+                                aiohttp.WSMsgType.ERROR,
+                            ):
+                                return
+
+                    async def ha_to_client() -> None:
+                        async for msg in ha_ws:
+                            if msg.type == aiohttp.WSMsgType.TEXT:
+                                await client_ws.send_str(msg.data)
+                            elif msg.type in (
+                                aiohttp.WSMsgType.CLOSE,
+                                aiohttp.WSMsgType.CLOSING,
+                                aiohttp.WSMsgType.CLOSED,
+                                aiohttp.WSMsgType.ERROR,
+                            ):
+                                return
+
+                    await asyncio.gather(
+                        client_to_ha(), ha_to_client(), return_exceptions=True,
+                    )
+        except Exception:
+            log.exception("HA WS proxy failed")
+        finally:
+            if not client_ws.closed:
+                await client_ws.close()
+            log.info("HA WS proxy: client disconnected")
+        return client_ws
+
     app = web.Application()
     app.router.add_get("/", index)
     app.router.add_get("/api/config", config)
     app.router.add_post("/api/demo/trigger", demo_trigger)
     app.router.add_get("/api/health", health)
+    app.router.add_get("/api/ha/websocket", ha_websocket_proxy)
     # Static fallback for any other gui/* file (CSS/JS if we split out).
     if GUI_DIR.is_dir():
         app.router.add_static("/static/", GUI_DIR, show_index=False)

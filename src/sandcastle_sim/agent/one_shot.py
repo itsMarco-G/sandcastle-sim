@@ -14,7 +14,7 @@ The flow:
      through MCP, append the tool results, and loop.
   4. When Ollama responds with plain text (no tool calls), print it.
 
-Bounded by ``max_iterations`` (default 6) so a confused model
+Bounded by ``max_iterations`` (default 8) so a confused model
 can't burn credits forever.
 
 This module talks to Ollama's **native** ``/api/chat`` (not the
@@ -169,7 +169,7 @@ class OneShotAgent:
     mcp_url: str = "http://localhost:8765/mcp/"
     ollama_url: str = "http://localhost:11434"
     model: str = "gemma4:e4b"
-    max_iterations: int = 6
+    max_iterations: int = 8
     temperature: float = 0.0
     """0.0 is deterministic and slightly faster than 0.2 (no
     sampling overhead). The model still produces varied tool args

@@ -78,7 +78,15 @@ class EvalCase:
 
 @dataclass
 class EvalResult:
-    """Outcome of running one ``EvalCase``."""
+    """Outcome of running one ``EvalCase``.
+
+    ``elapsed`` is the median across all ``latencies`` (so the diff
+    harness compares medians, not single noisy samples). ``latencies``
+    is a list of every per-run wall time — len == 1 for single-shot
+    runs and len == ``--repeat`` otherwise. ``passed`` is True only
+    when every repeat passed; intermittent failure counts as a
+    regression.
+    """
 
     case: EvalCase
     passed: bool
@@ -87,6 +95,7 @@ class EvalResult:
     tool_calls: List[Dict[str, Any]]
     failures: List[str] = field(default_factory=list)
     error: Optional[str] = None
+    latencies: List[float] = field(default_factory=list)
 
 
 # --------------------------------------------------------------------------- #
@@ -219,15 +228,49 @@ def _unwrap(call_result: Any) -> Dict[str, Any]:
 # --------------------------------------------------------------------------- #
 
 
+async def _warm_up_model(
+    http: httpx.AsyncClient,
+    ollama_url: str,
+    model: str,
+) -> Optional[float]:
+    """Pre-load the model into VRAM before timing any case. Without
+    this the first case eats the cold-load duration (often several
+    seconds) and looks artificially slow vs the rest of the suite,
+    making per-case latency comparisons fuzzy.
+
+    Returns the warmup wall time, or ``None`` if the warmup failed
+    (the eval continues either way — case 1 will pay the cost).
+    """
+    started = time.monotonic()
+    try:
+        await http.post(
+            f"{ollama_url.rstrip('/')}/api/generate",
+            json={
+                "model": model,
+                "prompt": "ok",
+                "stream": False,
+                "options": {"num_predict": 1},
+                "keep_alive": -1,
+            },
+            timeout=600.0,
+        )
+    except httpx.HTTPError:
+        return None
+    return time.monotonic() - started
+
+
 async def run_suite(
     cases: List[EvalCase],
     *,
     mcp_url: str = "http://localhost:8765/mcp/",
     ollama_url: str = "http://localhost:11434",
     model: str = "gemma4:e4b",
-    max_iterations: int = 6,
+    max_iterations: int = 8,
+    repeat: int = 3,
+    live: bool = False,
+    suite_name: str = "",
     **agent_overrides: Any,
-) -> List[EvalResult]:
+) -> Tuple[Optional[float], List[EvalResult]]:
     """Run every case once against a live MCP + Ollama stack.
 
     Opens the MCP session and the httpx client once and reuses them
@@ -236,11 +279,33 @@ async def run_suite(
     rebuilds the cheat sheet from current state since prior cases
     may have changed it.
 
+    Warms the model with a one-token generate before any case runs,
+    so per-case latency reflects steady-state generation cost only.
+    The warmup wall time is returned alongside the results so the
+    report can surface it as a separate one-time cost.
+
+    With ``live=True`` the header, warmup, and each case's result
+    are streamed as they happen so users can see progress on hosts
+    where each prompt takes tens of seconds. The caller still gets
+    the full ``results`` list back and is responsible for the
+    summary footer (via ``print_summary``) and any post-processing.
+
     ``agent_overrides`` is forwarded to OneShotAgent — used for the
     CLI's ``--no-routing`` / ``--no-cheat-sheet`` flags so users can
     demo the diff harness without setting env vars that might leak
     into later invocations.
     """
+    name_width = max((len(c.name) for c in cases), default=10)
+    n = len(cases)
+    console = None
+    if live:
+        from rich.console import Console
+        console = Console()
+        title = "Sandcastle Sim eval"
+        if suite_name:
+            title += f" — {suite_name}"
+        console.rule(f"[bold cyan]{title}[/]", align="left")
+
     results: List[EvalResult] = []
     async with streamablehttp_client(mcp_url) as (read, write, _gs):
         async with ClientSession(read, write) as session:
@@ -263,11 +328,142 @@ async def run_suite(
             )
 
             async with httpx.AsyncClient(timeout=300.0) as http:
-                for case in cases:
-                    results.append(
-                        await _run_case(session, http, agent, all_tools, case)
-                    )
-    return results
+                if console is not None:
+                    with console.status(
+                        "[dim]warming up model...[/]", spinner="dots"
+                    ):
+                        warmup_s = await _warm_up_model(http, ollama_url, model)
+                    if warmup_s is not None:
+                        console.print(
+                            f"  [dim]warmup {warmup_s:.1f}s "
+                            f"(one-time model load — excluded from per-case timings)[/]"
+                        )
+                else:
+                    warmup_s = await _warm_up_model(http, ollama_url, model)
+
+                for i, case in enumerate(cases, 1):
+                    if console is not None:
+                        status_label = (
+                            f"[dim][{i}/{n}] running {case.name}...[/]"
+                            if repeat == 1 else
+                            f"[dim][{i}/{n}] running {case.name} "
+                            f"(rep 1/{repeat})...[/]"
+                        )
+                        with console.status(
+                            status_label, spinner="dots",
+                        ) as status:
+                            result = await _run_case_repeated(
+                                session, http, agent, all_tools, case,
+                                repeat=repeat,
+                                on_rep=lambda r: status.update(
+                                    f"[dim][{i}/{n}] running {case.name} "
+                                    f"(rep {r}/{repeat})...[/]"
+                                ) if repeat > 1 else None,
+                            )
+                        _live_print_case(console, result, name_width, i, n)
+                    else:
+                        result = await _run_case_repeated(
+                            session, http, agent, all_tools, case,
+                            repeat=repeat,
+                        )
+                    results.append(result)
+    return warmup_s, results
+
+
+async def _run_case_repeated(
+    session: ClientSession,
+    http: httpx.AsyncClient,
+    agent: OneShotAgent,
+    all_tools: List[Dict[str, Any]],
+    case: EvalCase,
+    *,
+    repeat: int,
+    on_rep: Optional[Any] = None,
+) -> EvalResult:
+    """Run a case ``repeat`` times back-to-back and aggregate.
+
+    The model stays pinned across repeats (keep_alive=-1) so per-rep
+    cost is just generation, not load. ``elapsed`` is the median
+    across all repeats; ``passed`` is True only if every rep passed
+    (intermittent failure counts as a regression). The first failing
+    rep's failures / error are surfaced — that's what users need to
+    debug.
+    """
+    runs: List[EvalResult] = []
+    for r in range(1, repeat + 1):
+        if on_rep is not None and r > 1:
+            on_rep(r)
+        runs.append(await _run_case(session, http, agent, all_tools, case))
+
+    latencies = [r.elapsed for r in runs]
+    median_elapsed = sorted(latencies)[len(latencies) // 2]
+    all_passed = all(r.passed for r in runs)
+
+    if all_passed:
+        last = runs[-1]
+        return EvalResult(
+            case=case,
+            passed=True,
+            elapsed=median_elapsed,
+            iterations=last.iterations,
+            tool_calls=last.tool_calls,
+            failures=[],
+            error=None,
+            latencies=latencies,
+        )
+    first_fail = next(r for r in runs if not r.passed)
+    return EvalResult(
+        case=case,
+        passed=False,
+        elapsed=median_elapsed,
+        iterations=first_fail.iterations,
+        tool_calls=first_fail.tool_calls,
+        failures=first_fail.failures,
+        error=first_fail.error,
+        latencies=latencies,
+    )
+
+
+def _live_print_case(
+    console: Any,  # rich.console.Console — typed Any to avoid the import here
+    r: EvalResult,
+    name_width: int,
+    i: int,
+    n: int,
+) -> None:
+    """Render one case result during a live run. Format matches
+    ``print_report`` so the live stream and the post-hoc report
+    look identical."""
+    from rich.text import Text
+
+    if r.error:
+        mark = "[bold red]✗[/]"
+    elif r.passed:
+        mark = "[bold green]✓[/]"
+    else:
+        mark = "[bold red]✗[/]"
+    spread = _latency_spread(r)
+    line = Text.from_markup(
+        f"  {mark} [bold]{r.case.name:<{name_width}}[/]  "
+        f"[dim]{r.elapsed:5.1f}s{spread}  {r.iterations} iter  "
+        f"[{i}/{n}][/]"
+    )
+    console.print(line)
+    if r.error:
+        console.print(f"  [red]error: {r.error}[/]")
+    for f in r.failures:
+        console.print(f"      [red]{f}[/]")
+
+
+def _latency_spread(r: EvalResult) -> str:
+    """Render a "(min–max, n=N)" tail when a case ran multiple times,
+    so the report shows variance at a glance. Empty string when the
+    case ran once (or no latencies were recorded)."""
+    if len(r.latencies) <= 1:
+        return ""
+    lo = min(r.latencies)
+    hi = max(r.latencies)
+    return f" [{lo:.1f}-{hi:.1f}, n={len(r.latencies)}]"
 
 
 async def _run_case(
@@ -308,6 +504,7 @@ async def _run_case(
         tool_calls=tool_calls,
         failures=failures,
         error=error,
+        latencies=[elapsed],
     )
 
 
@@ -316,12 +513,19 @@ async def _run_case(
 # --------------------------------------------------------------------------- #
 
 
-def print_report(results: List[EvalResult], *, suite_name: str = "") -> None:
+def print_report(
+    results: List[EvalResult],
+    *,
+    suite_name: str = "",
+    warmup_s: Optional[float] = None,
+) -> None:
     """Pretty-print the results as a Rich table-like list.
 
     Latency is first-class (per-case + a slowest line). No
     aggregate "score" framing — what passed and what didn't, with
-    failure detail under each non-pass.
+    failure detail under each non-pass. ``warmup_s`` is rendered as
+    a one-time cost in the header so per-case numbers stay
+    comparable across hosts.
     """
     from rich.console import Console
     from rich.text import Text
@@ -331,6 +535,11 @@ def print_report(results: List[EvalResult], *, suite_name: str = "") -> None:
     if suite_name:
         title += f" — {suite_name}"
     console.rule(f"[bold cyan]{title}[/]", align="left")
+    if warmup_s is not None:
+        console.print(
+            f"  [dim]warmup {warmup_s:.1f}s "
+            f"(one-time model load — excluded from per-case timings)[/]"
+        )
 
     name_width = max((len(r.case.name) for r in results), default=10)
 
@@ -345,9 +554,10 @@ def print_report(results: List[EvalResult], *, suite_name: str = "") -> None:
             mark = "[bold red]✗[/]"
             note = ""
 
+        spread = _latency_spread(r)
         line = Text.from_markup(
             f"  {mark} [bold]{r.case.name:<{name_width}}[/]  "
-            f"[dim]{r.elapsed:5.1f}s  {r.iterations} iter[/]"
+            f"[dim]{r.elapsed:5.1f}s{spread}  {r.iterations} iter[/]"
         )
         console.print(line)
         if note:
@@ -355,6 +565,16 @@ def print_report(results: List[EvalResult], *, suite_name: str = "") -> None:
         for f in r.failures:
             console.print(f"      [red]{f}[/]")
 
+    print_summary(results)
+
+
+def print_summary(results: List[EvalResult]) -> None:
+    """Just the trailing summary block (pass count / total / avg /
+    slowest). Used by the live-progress path so per-case lines
+    aren't duplicated at the end."""
+    from rich.console import Console
+
+    console = Console()
     console.print()
     n_pass = sum(1 for r in results if r.passed)
     total = len(results)
@@ -404,27 +624,41 @@ def default_baseline_path(workdir: Optional[Path] = None) -> Path:
     return workdir / ".sandcastle" / "eval-baseline.json"
 
 
-def save_run(results: List[EvalResult], path: Path) -> None:
+def save_run(
+    results: List[EvalResult],
+    path: Path,
+    *,
+    warmup_s: Optional[float] = None,
+) -> None:
     """Serialise an eval run to JSON. Includes a timestamp so the
-    diff can say "baseline saved 2 hours ago"."""
+    diff can say "baseline saved 2 hours ago", and the warmup time
+    (kept separate from per-case latencies)."""
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "saved_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "warmup_s": warmup_s,
         "results": [_result_to_dict(r) for r in results],
     }
     path.write_text(json.dumps(payload, indent=2))
 
 
-def load_run(path: Path) -> Tuple[Optional[str], List[Dict[str, Any]]]:
-    """Read a saved eval run. Returns (saved_at, results-as-dicts).
+def load_run(
+    path: Path,
+) -> Tuple[Optional[str], Optional[float], List[Dict[str, Any]]]:
+    """Read a saved eval run. Returns (saved_at, warmup_s, results-as-dicts).
 
-    Returns (None, []) for a missing file so the caller can decide
-    whether that's an error.
+    Returns (None, None, []) for a missing file so the caller can
+    decide whether that's an error. ``warmup_s`` is ``None`` for
+    baselines saved before warmup tracking landed.
     """
     if not path.is_file():
-        return None, []
+        return None, None, []
     payload = json.loads(path.read_text())
-    return payload.get("saved_at"), payload.get("results") or []
+    return (
+        payload.get("saved_at"),
+        payload.get("warmup_s"),
+        payload.get("results") or [],
+    )
 
 
 def _result_to_dict(r: EvalResult) -> Dict[str, Any]:
@@ -434,6 +668,7 @@ def _result_to_dict(r: EvalResult) -> Dict[str, Any]:
         "prompt": r.case.prompt,
         "passed": r.passed,
         "elapsed": r.elapsed,
+        "latencies": list(r.latencies) if r.latencies else [r.elapsed],
         "iterations": r.iterations,
         "tool_calls": r.tool_calls,
         "failures": r.failures,

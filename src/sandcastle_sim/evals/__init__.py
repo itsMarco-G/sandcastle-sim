@@ -34,6 +34,7 @@ from .runner import (
     load_suite,
     print_diff_report,
     print_report,
+    print_summary,
     run_suite,
     save_run,
 )
@@ -51,6 +52,7 @@ __all__ = [
     "load_suite",
     "print_diff_report",
     "print_report",
+    "print_summary",
     "run_suite",
     "save_run",
 ]

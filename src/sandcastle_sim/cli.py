@@ -677,7 +677,7 @@ def cmd_eval(args: argparse.Namespace) -> int:
         load_run,
         load_suite,
         print_diff_report,
-        print_report,
+        print_summary,
         run_suite,
         save_run,
     )
@@ -739,39 +739,41 @@ def cmd_eval(args: argparse.Namespace) -> int:
         else default_baseline_path(workdir)
     )
 
-    results = asyncio.run(
+    warmup_s, results = asyncio.run(
         run_suite(
             cases,
             mcp_url=args.mcp_url,
             ollama_url=args.ollama_url,
             model=args.model,
             max_iterations=args.max_iterations,
+            repeat=max(1, int(args.repeat)),
+            live=True,
+            suite_name=suite_path.name,
             **_optimization_overrides(args),
         )
     )
 
     if args.save_baseline:
-        save_run(results, baseline_path)
-        print_report(results, suite_name=suite_path.name)
+        save_run(results, baseline_path, warmup_s=warmup_s)
+        print_summary(results)
         print(f"\n  baseline saved to {baseline_path}")
         return 0
 
     if args.diff:
-        saved_at, baseline = load_run(baseline_path)
+        saved_at, _baseline_warmup_s, baseline = load_run(baseline_path)
         if not baseline:
             print(
                 f"no baseline found at {baseline_path}\n"
                 f"Save one first with: sandcastle-sim eval --save-baseline",
                 file=sys.stderr,
             )
-            # Still print the current run so the work isn't wasted.
-            print_report(results, suite_name=suite_path.name)
+            print_summary(results)
             return 1
         entries = diff_runs(baseline, results)
         print_diff_report(entries, saved_at=saved_at, suite_name=suite_path.name)
         return 1 if has_regressions(entries) else 0
 
-    print_report(results, suite_name=suite_path.name)
+    print_summary(results)
     failed = [r for r in results if not r.passed]
     return 0 if not failed else 1
 
@@ -923,7 +925,7 @@ def _add_agent_args(p: argparse.ArgumentParser) -> None:
         ),
     )
     p.add_argument(
-        "--max-iterations", type=int, default=6,
+        "--max-iterations", type=int, default=8,
         help="Max LLM iterations per turn (default: %(default)s)",
     )
     p.add_argument(
@@ -1123,6 +1125,19 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Override the default baseline location "
             "(.sandcastle/eval-baseline.json in the workdir)."
+        ),
+    )
+    p_eval.add_argument(
+        "--repeat",
+        type=int,
+        default=3,
+        help=(
+            "Run each case N times and report the median latency "
+            "(default 3). Pass requires all N to pass — any flake "
+            "counts as a regression. Warmup is paid once regardless "
+            "of N because the model stays pinned, so the marginal "
+            "cost is just N × per-case time. Use --repeat 1 for fast "
+            "iteration when you don't care about steady-state numbers."
         ),
     )
     _add_workdir_arg(p_eval)

@@ -225,8 +225,14 @@ const ENTITY_STATE = {};
 // HA WebSocket client
 // ============================================================
 class HAClient {
-  constructor(url, token) {
-    this.url = url.replace(/^http/, "ws") + "/api/websocket";
+  constructor(wsUrl, token) {
+    // wsUrl is already a full ws:// or wss:// URL pointing at the
+    // proxy on the control server (e.g. ws://localhost:8766/api/ha/websocket).
+    // The control server pipes traffic through to HA so we don't have
+    // to know HA's actual URL — that breaks under SSH / VS Code port
+    // forwarding because "localhost" in the browser doesn't always
+    // mean the same host as the kit.
+    this.url = wsUrl;
     this.token = token;
     this.ws = null;
     this._nextId = 1;
@@ -299,7 +305,13 @@ async function main() {
 
   drawRooms();
 
-  const ha = new HAClient(cfg.ha_url, cfg.ha_token);
+  // Build the WebSocket URL relative to the page itself so the proxy
+  // resolves to the same host:port the GUI was loaded from. Works
+  // through any SSH or VS Code port-forward without any HA-side port
+  // assumptions.
+  const wsProto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const wsUrl = `${wsProto}//${window.location.host}/api/ha/websocket`;
+  const ha = new HAClient(wsUrl, cfg.ha_token);
   try {
     await ha.connect();
   } catch (e) {

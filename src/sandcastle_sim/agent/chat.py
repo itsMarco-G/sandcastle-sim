@@ -212,11 +212,24 @@ async def _warm_model(
 async def _warm_with_progress(
     http: httpx.AsyncClient, ollama_url: str, model: str, keep_alive: str,
 ) -> None:
-    """Run _warm_model behind a "warming model ..." spinner."""
+    """Run _warm_model behind a "warming model ..." spinner.
+
+    Prints a one-line hint above the spinner the first time, since on
+    Apple Silicon (and other unified-memory laptops) the cold-load
+    can run 30-90s and a silent spinner has caused a few "is it
+    hung?" reports.
+    """
     started = time.monotonic()
     tty = sys.stderr.isatty()
     stop = asyncio.Event()
     label = f"warming {model}"
+
+    sys.stderr.write(
+        f"{_C.DIM}  loading the model into memory — "
+        f"~5s on a workstation GPU, 30-90s on Apple Silicon / laptop. "
+        f"Subsequent prompts are fast.{_C.RESET}\n"
+    )
+    sys.stderr.flush()
 
     async def tick() -> None:
         try:
