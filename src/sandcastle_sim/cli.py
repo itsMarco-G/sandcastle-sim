@@ -180,19 +180,83 @@ def _try_reload_ha_scenes(workdir: Path) -> None:
         pass
 
 
+def _active_workdir_state_file() -> Path:
+    """XDG-style state file recording the workdir of the live stack.
+
+    Written by ``cmd_start`` once it has resolved a workdir, removed
+    by ``cmd_stop`` after a successful teardown. Used by lifecycle
+    commands (stop/logs/status) to find the running stack regardless
+    of cwd — without this, ``cd ~ && sandcastle-sim stop`` after a
+    ``cd /repo && sandcastle-sim start`` would target the wrong
+    docker-compose file.
+    """
+    base = os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local" / "state")
+    return Path(base) / "sandcastle-sim" / "active-workdir"
+
+
+def _record_active_workdir(workdir: Path) -> None:
+    """Persist the live stack's workdir for later lifecycle calls."""
+    f = _active_workdir_state_file()
+    try:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(str(workdir.resolve()) + "\n")
+    except OSError as exc:
+        # Non-fatal: the lifecycle still works as long as the user
+        # runs follow-up commands from the same cwd. Just log a
+        # heads-up so it's discoverable when they hit it.
+        print(
+            f"warning: could not record active workdir at {f}: {exc}",
+            file=sys.stderr,
+        )
+
+
+def _read_active_workdir() -> Optional[Path]:
+    """Return the recorded active workdir if it exists and is valid."""
+    f = _active_workdir_state_file()
+    if not f.is_file():
+        return None
+    try:
+        candidate = Path(f.read_text().strip())
+    except OSError:
+        return None
+    # The file is only authoritative if the dir still exists and
+    # looks like a real workdir (has the compose file we'd manage).
+    if candidate.is_dir() and (candidate / "docker-compose.yml").is_file():
+        return candidate
+    return None
+
+
+def _clear_active_workdir() -> None:
+    """Remove the active-workdir state file. Safe to call when absent."""
+    f = _active_workdir_state_file()
+    try:
+        f.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def _resolve_workdir(workdir_arg: Optional[str]) -> Path:
     """Pick the right working directory based on context.
 
     Order:
       1. Explicit --workdir arg wins.
       2. If we're in a repo checkout (top-level docker-compose.yml
-         + ha-config/), use cwd.
-      3. Else use ~/.local/share/sandcastle-sim and seed it.
+         + ha-config/), use cwd. Repo-checkout mode wins over the
+         active-workdir state file because a developer working in a
+         checkout almost certainly wants their checkout's compose
+         file even if a previous `start` was run from elsewhere.
+      3. If a previous `start` recorded an active workdir and it's
+         still valid, use that. Lets `stop` / `logs` / `status` run
+         from any cwd against the live stack.
+      4. Else use ~/.local/share/sandcastle-sim and seed it.
     """
     if workdir_arg:
         return Path(workdir_arg).resolve()
     if _running_in_repo_checkout():
         return Path.cwd()
+    recorded = _read_active_workdir()
+    if recorded is not None:
+        return recorded
     return Path.home() / ".local" / "share" / "sandcastle-sim"
 
 
@@ -744,6 +808,10 @@ def cmd_start(args: argparse.Namespace) -> int:
                     ok=False,
                 )
 
+    # Record the active workdir so a later `stop` / `logs` / `status`
+    # from a different cwd targets the same stack.
+    _record_active_workdir(workdir)
+
     # 5. Castle + the one next action, both inside the same panel
     #    so the art doesn't get pushed off-screen by the call to
     #    action below it.
@@ -804,6 +872,7 @@ def cmd_stop(args: argparse.Namespace) -> int:
         print(" failed")
         return rc
     print(" stopped")
+    _clear_active_workdir()
     _print_castle("Sandcastle Sim is down")
     return 0
 
